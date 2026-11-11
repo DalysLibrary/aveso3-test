@@ -9,6 +9,7 @@
 #include "../../Ao3ViewEntry.h"
 #include "../../Ao3SortFilterState.h"
 #include "../../util/ButtonNavigator.h"
+#include "../../util/Ao3Search.h"
 #include "Ao3LibrarySettingsActivity.h"
 
 #include "../../components/UiAppHost.h"
@@ -59,6 +60,8 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
     FILTER_PANEL,
     FANDOM_PICKER,
     RELATIONSHIP_PICKER,
+    TITLE_LETTER_PICKER,
+    AUTHOR_LETTER_PICKER,
     MANAGE_PANEL
   };
 
@@ -90,7 +93,22 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   std::string folderTreeRelationship;
   
   std::vector<uint32_t> allowedHashes;
-  int overlayRowIndex = 0; // 0=Fandom, 1=Relationship, 2=Sort By, 3=Order, 4=Confirm
+  // Rows of the Sort & Filter panel, top to bottom.
+  static constexpr int kRowFandom       = 0;
+  static constexpr int kRowRelationship = 1;
+  static constexpr int kRowTitleLetter  = 2;
+  static constexpr int kRowAuthorLetter = 3;
+  static constexpr int kRowSearch       = 4;
+  static constexpr int kRowSort         = 5;
+  static constexpr int kRowOrder        = 6;
+  static constexpr int kRowConfirm      = 7;
+  static constexpr int kRowCount        = 8;
+  int overlayRowIndex = 0; // one of the kRow* values above
+
+  // Text search typed in the Sort & Filter panel, split into words once per list rebuild.
+  ao3search::Query searchQuery_;
+  // "Hide finished" setting as read by the last rebuildViewEntries(); the letter pickers use it for their counts.
+  bool hideFinished_ = false;
   int managePanelRowIndex = 0; // 0=Index New Books, 1=AO3 Library Settings
 
   // Pickers support
@@ -139,6 +157,10 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   void rebuildViewEntries();
   void applyStateChange(const SortFilterState& prev, const SortFilterState& next);
   bool passesFilter(const ViewEntry& v, const FilterHashes& h) const;
+  bool passesLetters(const ViewEntry& v) const;
+  bool isPickerState() const;
+  void buildLetterList(bool byAuthor, std::vector<std::string>& out) const;
+  void launchSearch();
 
   void buildFandomList(std::vector<std::string>& out) const;
   void buildRelationshipList(const char* fandom, std::vector<std::string>& out, bool& hasNoneEntries) const;

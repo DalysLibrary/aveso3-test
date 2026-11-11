@@ -15,4 +15,9 @@ struct SortFilterState {
     bool     relationshipNoneOnly = false;
     SortMode sortMode = SortMode::ALPHABETIC;
     bool     ascending = true;
+    // First-letter filters: 'A'..'Z', or '#' for digits/symbols/other alphabets. 0 = any.
+    char     titleLetter = 0;
+    char     authorLetter = 0;
+    // Free-text search over title, author, series, fandom and relationships. Empty = no search.
+    char     query[32] = {};
 };
