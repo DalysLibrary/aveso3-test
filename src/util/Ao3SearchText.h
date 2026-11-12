@@ -8,7 +8,7 @@
 #include "Ao3Search.h"
 
 // The "search text" file: one line per AO3 book holding what the library index does not keep -- the book's file
-// path (so folder and file names can be searched) and its complete tag lists (see Ao3TagExtractor).
+// path (so folder and file names can be searched) and its additional tags (see Ao3TagExtractor).
 //
 // Line format:   <8 hex digits of the book's hash> TAB <file path> TAB <tag text> NEWLINE
 //
@@ -16,8 +16,8 @@
 // file can be larger than the free RAM.
 namespace ao3text {
 
-constexpr const char* kSearchTextPath = "/.crosspoint/ao3_search_text.tsv";
-constexpr size_t kMaxLineBytes = 1100;  // longer lines are ignored
+constexpr const char* kSearchTextPath = "/.crosspoint/ao3_tag_text.tsv";
+constexpr size_t kMaxLineBytes = 900;   // longer lines are ignored (path up to 255 + tags up to 480 fit easily)
 constexpr size_t kMaxHits = 2000;       // lines kept in memory at once during one search
 
 // ---- parts that need no storage (also unit tested on a PC) ----------------------------------------------------

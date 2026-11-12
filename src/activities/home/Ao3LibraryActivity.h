@@ -160,7 +160,7 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   bool passesLetters(const ViewEntry& v) const;
   bool isPickerState() const;
   void buildLetterList(bool byAuthor, std::vector<std::string>& out) const;
-  void launchSearch();
+  void launchSearch(bool fromPanel);
 
   void buildFandomList(std::vector<std::string>& out) const;
   void buildRelationshipList(const char* fandom, std::vector<std::string>& out, bool& hasNoneEntries) const;

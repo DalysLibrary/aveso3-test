@@ -6,16 +6,18 @@
 namespace ao3text {
 
 constexpr size_t kLineBytes = 1536;     // longest line of page text that is looked at (long tag lists)
-constexpr size_t kTextBytes = 720;      // longest result (all lists together)
-constexpr size_t kValueBytes = 320;     // longest single list (e.g. all additional tags)
+constexpr size_t kTextBytes = 520;      // longest result
+constexpr size_t kValueBytes = 480;     // longest single list (all additional tags of one book)
 constexpr size_t kMaxScanBytes = 16384;  // stop reading a page after this many bytes
-constexpr int kMaxTagWords = 7;          // a free-text tag with more words than this is left out (see storeValue)
+constexpr int kMaxTagWords = 7;          // a tag with more words than this is left out (see dropLongTags)
 
-// Pulls the full tag lists (fandoms, relationships, characters, additional tags, genre, category) out of the
-// preface page of an AO3 fic, which is streamed through feed() in pieces of any size.
+// Pulls the author's free-text tags ("Additional Tags:", and "Genre:" on FanFicFare epubs) out of the preface page
+// of an AO3 fic, which is streamed through feed() in pieces of any size. Fandom, relationship and character
+// lists are not kept: the library can already filter by those, and leaving them out keeps the data small.
 //
 // The library's own scraper (Ao3Librarian) keeps only 4 short tags per book. This reads the same page again but
-// keeps everything, for the text search. It works on the page as plain text: HTML tags are removed, block-level
+// keeps all of them (except tags of more than kMaxTagWords words), for the text search.
+// It works on the page as plain text: HTML tags are removed, block-level
 // tags (<br>, <p>, <div>, </dd>, <dt> ...) end a line, and a line that starts with a label such as
 // "Additional Tags:" gives the list for that label. That fits both AO3's own download and FanFicFare epubs.
 //
@@ -39,7 +41,7 @@ class TagExtractor {
   bool done() const { return done_; }
   bool hasText() const { return outLen_ > 0; }
 
-  // The lists found, separated by "; ", e.g. "Supernatural; Castiel/Dean Winchester; Fluff, Angst".
+  // The tags found, e.g. "Hurt/Comfort, Fluff, Alternate Universe - College/University".
   const char* text() const { return out_; }
 
  private:

@@ -380,6 +380,8 @@ void Ao3LibraryActivity::loop() {
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
       if (skipNextBackRelease) {
         skipNextBackRelease = false;
+      } else if (mappedInput.getHeldTime() >= 700) {
+        launchSearch(false);  // holding Back opens Search straight away
       } else {
         activityManager.popActivity();
       }
@@ -452,6 +454,10 @@ void Ao3LibraryActivity::loop() {
         // the whole contact as soon as it is consumed, wherever the finger is.
         selectorIndex = static_cast<size_t>(entryAt(tx, ty));
         touchHold = true;
+      } else if (mappedInput.isScreenTouchHeld(tx, ty) && ty < 48 && mappedInput.wasScreenLongPress(tx, ty)) {
+        // Long-press on the title bar (a short tap there still opens Sort & Filter): straight to Search
+        launchSearch(false);
+        return;
       }
     }
 
@@ -682,8 +688,8 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Up) ||
         }
         launchPicker(byAuthor ? ScreenState::AUTHOR_LETTER_PICKER : ScreenState::TITLE_LETTER_PICKER, targetIdx);
       } else if (overlayRowIndex == kRowSearch) {
-        launchSearch();
-        return;  // the keyboard screen takes over; the result handler redraws this panel
+        launchSearch(true);
+        return;  // the keyboard screen takes over; Enter there applies everything and closes the panel
       } else if (overlayRowIndex == kRowSort) {
         // Sort by cycle: Title -> Author -> Word Count -> Date Added -> Series -> Title
         switch (pendingState.sortMode) {
@@ -1005,7 +1011,7 @@ void Ao3LibraryActivity::renderLibrary(RenderLock& lock) {
   if (indexState == IndexState::MISSING || (indexState == IndexState::OK && viewEntries.empty())) {
     if (activeState.fandom[0] != '\0' || hasExtraFilters(activeState)) {
       renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No matches for current filter.");
-      renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Open Sort & Filter to change it.");
+      renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Hold Back to search again, or open Sort & Filter.");
     } else {
       renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2 - 12, "No AO3 books indexed yet.");
       renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 12, "Press SIDE UP to index new books.");
@@ -2176,27 +2182,42 @@ void Ao3LibraryActivity::buildLetterList(bool byAuthor, std::vector<std::string>
   }
 }
 
-// Opens the on-screen keyboard; the typed words go into the pending filter and the panel is shown again.
-void Ao3LibraryActivity::launchSearch() {
-  auto handler = [this](const ActivityResult& result) {
-    if (!result.isCancelled) {
-      if (const auto* kb = std::get_if<KeyboardResult>(&result.data)) {
-        // Trim spaces at both ends
-        size_t b = 0;
-        size_t e = kb->text.size();
-        while (b < e && kb->text[b] == ' ') b++;
-        while (e > b && kb->text[e - 1] == ' ') e--;
-        memset(pendingState.query, 0, sizeof(pendingState.query));
-        strncpy(pendingState.query, kb->text.substr(b, e - b).c_str(), sizeof(pendingState.query) - 1);
-      }
+// Opens the on-screen keyboard. Pressing Enter applies the search at once:
+//  - started from the Sort & Filter panel: together with the other choices made in the panel (as Confirm would),
+//  - started from the list (hold Back, or long-press the title bar): on its own, so the fandom, letter and sort
+//    choices already in force stay exactly as they are.
+// Enter on an empty text clears the search. Back leaves everything as it was.
+void Ao3LibraryActivity::launchSearch(const bool fromPanel) {
+  const std::string initialText(fromPanel ? pendingState.query : activeState.query);
+
+  auto handler = [this, fromPanel](const ActivityResult& result) {
+    const auto* kb = result.isCancelled ? nullptr : std::get_if<KeyboardResult>(&result.data);
+    if (!kb) {
+      requestUpdate(true);  // cancelled: back to where the search was started
+      return;
     }
-    overlayRowIndex = kRowSearch;  // stay on the Search row; Down moves on
+
+    // Trim spaces at both ends
+    size_t b = 0;
+    size_t e = kb->text.size();
+    while (b < e && kb->text[b] == ' ') b++;
+    while (e > b && kb->text[e - 1] == ' ') e--;
+
+    SortFilterState next = fromPanel ? pendingState : activeState;
+    memset(next.query, 0, sizeof(next.query));
+    strncpy(next.query, kb->text.substr(b, e - b).c_str(), sizeof(next.query) - 1);
+
+    const SortFilterState previous = activeState;
+    activeState = next;
+    pendingState = next;
+    screenState = ScreenState::LIBRARY;
+    saveSortFilterState();
+    applyStateChange(previous, activeState);
     requestUpdate(true);
   };
 
   startActivityForResult(
-      std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, "Search library",
-                                              std::string(pendingState.query), sizeof(pendingState.query) - 1,
-                                              InputType::Text),
+      std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, "Search library", initialText,
+                                              sizeof(activeState.query) - 1, InputType::Text),
       handler);
 }

@@ -6,23 +6,19 @@ namespace ao3text {
 namespace {
 
 // Labels whose lists are kept, in the form they appear on the preface page (before the colon).
-constexpr const char* kLabels[] = {"Fandoms",    "Fandom",     "Relationships",   "Relationship", "Characters",
-                                   "Character",  "Additional Tags", "Genre",       "Category"};
+// "Genre" is where FanFicFare epubs put the author's free-text tags.
+constexpr const char* kLabels[] = {"Additional Tags", "Genre"};
 constexpr int kLabelCount = sizeof(kLabels) / sizeof(kLabels[0]);
-// Singular and plural forms share one group, so each kind of list is kept once.
-constexpr uint8_t kLabelGroup[kLabelCount] = {0, 0, 1, 1, 2, 2, 3, 4, 5};
-
-// Lists made of free-text tags written by the author. Some of these tags are whole sentences, so tags with more
-// than kMaxTagWords words are left out of them. Fandom, relationship and character names are official names that
-// can be long ("Star Wars: Knights of the Old Republic (Video Game)"), so those lists are kept as they are.
-constexpr bool kLabelIsFreeText[kLabelCount] = {false, false, false, false, false, false, true, true, false};
+constexpr uint8_t kLabelGroup[kLabelCount] = {0, 1};
 
 // Other labels found on AO3 and FanFicFare pages. A line that starts with one of these is not the value list of an
 // empty label on the line before it.
-constexpr const char* kOtherLabels[] = {"Rating",   "Archive Warning", "Archive Warnings", "Warning", "Warnings",
-                                        "Language", "Stats",           "Series",          "Summary", "Published",
-                                        "Updated",  "Words",           "Chapters",        "Status",  "Title",
-                                        "Author",   "Publisher",       "Packaged",        "Completed"};
+constexpr const char* kOtherLabels[] = {"Rating",     "Archive Warning", "Archive Warnings", "Warning",   "Warnings",
+                                        "Language",   "Stats",           "Series",           "Summary",   "Published",
+                                        "Updated",    "Words",           "Chapters",         "Status",    "Title",
+                                        "Author",     "Publisher",       "Packaged",         "Completed", "Category",
+                                        "Fandom",     "Fandoms",         "Relationship",     "Relationships",
+                                        "Character",  "Characters"};
 
 constexpr const char* kBreakingTags[] = {"p",  "div", "li", "ul", "ol",   "dl",         "tr",   "td",
                                          "th", "table", "br", "hr", "blockquote", "h1", "h2",   "h3",
@@ -392,7 +388,7 @@ void TagExtractor::storeValue(int label, char* value) {
     len -= 2;
     value[len] = '\0';
   }
-  if (kLabelIsFreeText[label]) len = dropLongTags(value, len);
+  len = dropLongTags(value, len);  // sentence-like tags (more than kMaxTagWords words) are left out
   if (len > kValueBytes - 1) {
     len = kValueBytes - 1;
     while (len > 0 && (static_cast<uint8_t>(value[len]) & 0xC0) == 0x80) len--;  // do not cut a character in half
