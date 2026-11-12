@@ -29,6 +29,7 @@
 #include <Utf8.h>
 
 #include "activities/util/KeyboardEntryActivity.h"
+#include "../../util/Ao3SearchText.h"
 
 namespace {
 // Sort & Filter panel geometry, shared by drawing and touch hit-testing so the two cannot drift apart.
@@ -1754,14 +1755,27 @@ void Ao3LibraryActivity::rebuildViewEntries() {
   hideFinished_ = hideFinished;
   searchQuery_.parse(activeState.query);  // split into words once, not once per book
 
+  // A search also looks at the tag lists and file paths kept in the search text file. That file is read once, here,
+  // and only a few bytes per book are kept while the index is read below.
+  std::vector<ao3text::Hit> searchHits;
+  if (!searchQuery_.empty()) ao3text::collectHits(searchQuery_, searchHits);
+
+  // The words may all be in the index record (title, author, series, fandom, relationships), all in the search
+  // text file (tags, characters, file path), or split between the two.
+  const auto passesSearch = [&](const CompactIndexRecord& r) {
+    if (searchQuery_.empty()) return true;
+    const uint8_t mask = static_cast<uint8_t>(ao3search::recordFoundMask(searchQuery_, r) |
+                                              ao3text::maskFor(searchHits, r.cacheHash));
+    return searchQuery_.satisfiedBy(mask);
+  };
+
   CompactIndexRecord rec;
   for (uint16_t i = 0; i < recordCount; i++) {
     if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
     if (rec.flags & 0x01) continue;           // Skip tombstone
     if (hideFinished && (rec.flags & 0x02)) continue; // Skip finished
     ViewEntry v = buildViewEntry(rec);
-    if (passesFilter(v, filterHashes) && passesLetters(v) &&
-        (searchQuery_.empty() || ao3search::recordMatches(searchQuery_, rec))) {
+    if (passesFilter(v, filterHashes) && passesLetters(v) && passesSearch(rec)) {
       viewEntries.push_back(v);
     }
     yield();

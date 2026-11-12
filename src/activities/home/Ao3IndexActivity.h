@@ -53,6 +53,9 @@ class Ao3IndexActivity final : public Activity, private UiAppHost {
   };
   std::vector<QueueEntry> dirQueue;
   std::vector<uint32_t> indexedHashes;
+  // Books that are in the index but have no line in the search text file yet (added before search by tags and
+  // file names existed). They are processed again, without touching their index record.
+  std::vector<uint32_t> textMissingHashes;
   std::vector<std::string> pendingBooks;
 
   // Progress variables

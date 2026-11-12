@@ -198,10 +198,20 @@ void Query::parse(const char* text) {
   }
 }
 
-bool Query::matches(const char* foldedHaystack) const {
-  if (!foldedHaystack) return count_ == 0;
+bool Query::matches(const char* foldedHaystack) const { return satisfiedBy(foundMask(foldedHaystack)); }
+
+uint8_t Query::foundMask(const char* foldedHaystack) const {
+  uint8_t mask = 0;
+  if (!foldedHaystack) return mask;
   for (uint8_t k = 0; k < count_; k++) {
-    const bool found = strstr(foldedHaystack, words_[k]) != nullptr;
+    if (strstr(foldedHaystack, words_[k]) != nullptr) mask |= static_cast<uint8_t>(1u << k);
+  }
+  return mask;
+}
+
+bool Query::satisfiedBy(uint8_t mask) const {
+  for (uint8_t k = 0; k < count_; k++) {
+    const bool found = (mask & (1u << k)) != 0;
     if (found == exclude_[k]) return false;  // wanted word missing, or excluded word present
   }
   return true;
@@ -209,6 +219,11 @@ bool Query::matches(const char* foldedHaystack) const {
 
 bool recordMatches(const Query& query, const CompactIndexRecord& rec) {
   if (query.empty()) return true;
+  return query.satisfiedBy(recordFoundMask(query, rec));
+}
+
+uint8_t recordFoundMask(const Query& query, const CompactIndexRecord& rec) {
+  if (query.empty()) return 0;
 
   char hay[320];
   size_t used = 0;
@@ -227,7 +242,7 @@ bool recordMatches(const Query& query, const CompactIndexRecord& rec) {
   add(rec.fandom, sizeof(rec.fandom));
   add(rec.relationship1, sizeof(rec.relationship1));
   add(rec.relationship2, sizeof(rec.relationship2));
-  return query.matches(hay);
+  return query.foundMask(hay);
 }
 
 }  // namespace ao3search

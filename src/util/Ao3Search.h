@@ -42,6 +42,12 @@ class Query {
   // `foldedHaystack` must already be folded (see foldInto).
   bool matches(const char* foldedHaystack) const;
 
+  // Which of the words occur in `foldedHaystack`: bit k is set when word k is found. A search can be answered from
+  // several pieces of text (the index record, then the tag file) by OR-ing the masks together, then asking
+  // satisfiedBy(). "-word" entries are reported the same way (bit set = found).
+  uint8_t foundMask(const char* foldedHaystack) const;
+  bool satisfiedBy(uint8_t mask) const;
+
  private:
   char words_[kMaxWords][kWordBytes];
   bool exclude_[kMaxWords];
@@ -50,5 +56,8 @@ class Query {
 
 // True when `query` matches the searchable text of one index record.
 bool recordMatches(const Query& query, const CompactIndexRecord& rec);
+
+// Same text as recordMatches() would search, reported as a word mask (see Query::foundMask).
+uint8_t recordFoundMask(const Query& query, const CompactIndexRecord& rec);
 
 }  // namespace ao3search

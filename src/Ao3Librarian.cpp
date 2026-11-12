@@ -1,5 +1,7 @@
 #include "Ao3Librarian.h"
 #include "activities/Ao3ArchiveHelper.h"
+#include "util/Ao3SearchText.h"
+#include "util/Ao3TagExtractor.h"
 #include <memory>
 #include <Epub.h>
 #include <HalStorage.h>
@@ -789,9 +791,38 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
         return false;
     }
 
+    // Best effort: the book is indexed whether or not its tag text could be recorded.
+    indexSearchText(epub);
+
     return true;
   }
   return false;
+}
+
+bool Ao3Librarian::indexSearchText(const Epub& epub) {
+  // Hands the bytes of a page to the extractor and tells the reader to stop once it needs no more.
+  struct Sink final : public Print {
+    ao3text::TagExtractor& extractor;
+    explicit Sink(ao3text::TagExtractor& e) : extractor(e) {}
+    size_t write(uint8_t b) override { return extractor.feed(&b, 1) ? 1 : 0; }
+    size_t write(const uint8_t* buffer, size_t size) override { return extractor.feed(buffer, size) ? size : 0; }
+  };
+
+  auto extractor = std::unique_ptr<ao3text::TagExtractor>(new ao3text::TagExtractor());
+
+  // Same pages as parseTitlePage: the first three spine items (a cover page may come first).
+  const int itemsToCheck = std::min(3, epub.getSpineItemsCount());
+  for (int i = 0; i < itemsToCheck; i++) {
+    extractor->startPage();
+    Sink sink(*extractor);
+    epub.readItemContentsToStream(epub.getSpineItem(i).href, sink, 1024);
+    extractor->finish();
+    if (extractor->hasText()) break;  // found the preface; the chapters are not needed
+  }
+
+  const std::string& path = epub.getPath();
+  const uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(path));
+  return ao3text::appendLine(hash, path.c_str(), extractor->text());
 }
 
 bool Ao3Librarian::getLibraryInfo(const Epub& epub, Ao3LibraryMetadata& meta) {

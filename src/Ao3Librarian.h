@@ -74,6 +74,14 @@ class Ao3Librarian {
    */
   static int sanitizeIndex();
 
+  /**
+   * @brief Reads the full tag lists (fandoms, relationships, characters, additional tags ...) from the
+   *        epub's preface page and records them, together with the file path, in the search text file
+   *        (see util/Ao3SearchText.h). Does not touch the sidecar or the index record.
+   * @return true if the line was written (even when the page held no recognisable lists).
+   */
+  static bool indexSearchText(const Epub& epub);
+
  private:
   /**
    * @brief Internal parser that handles the HTML streaming and anchor searching.
