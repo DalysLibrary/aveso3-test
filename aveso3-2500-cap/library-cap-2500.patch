@@ -1,0 +1,70 @@
+diff --git a/README.md b/README.md
+index 5285944..9cc3581 100644
+--- a/README.md
++++ b/README.md
+@@ -10,7 +10,7 @@
+ <img src="docs/images/AvesO3/AvesO3cover.jpg" width="100%">
+ 
+ 
+-- [x] **AO3-style library browser**, complete with summary and metadata square. You can add **up to 1000 books** to the AO3 library.
++- [x] **AO3-style library browser**, complete with summary and metadata square. You can add **up to 2500 books** to the AO3 library (X4 Pro and X4 Classic only).
+ - [x] Compatible with **Calibre+FanFicFare epubs** with *<u>*unmodified metadata spine*</u>* and **epubs from AO3**
+ - [x] AO3 Library **sorting and filtering** with 2 modes (Automatic & Folder Tree)
+ - [x] **Download new chapters** directly from AO3, or by using the *Send to AvesO3 extension*
+diff --git a/src/Ao3CompactIndexRecord.h b/src/Ao3CompactIndexRecord.h
+index 495029b..11b6cd7 100644
+--- a/src/Ao3CompactIndexRecord.h
++++ b/src/Ao3CompactIndexRecord.h
+@@ -20,7 +20,7 @@ struct CompactIndexRecord {
+ // Exactly 239 bytes on disk
+ static_assert(sizeof(CompactIndexRecord) == 239, "CompactIndexRecord must be exactly 239 bytes");
+ 
+-constexpr uint16_t MAX_LIBRARY_BOOKS = 1000;
++constexpr uint16_t MAX_LIBRARY_BOOKS = 2500;
+ constexpr uint32_t INDEX_HEADER_SIZE = 12;
+ 
+ inline uint32_t offsetOf(uint16_t i) {
+diff --git a/src/Ao3ViewEntry.h b/src/Ao3ViewEntry.h
+index 3bbb113..5870bbf 100644
+--- a/src/Ao3ViewEntry.h
++++ b/src/Ao3ViewEntry.h
+@@ -21,7 +21,7 @@ inline uint32_t fnv1a(const char* str) {
+  *        from ao3_library_index.bin at library startup.
+  *
+  * 46 bytes packed (pragma pack 1).
+- * 46 × 1000 books = 46 KB peak RAM.
++ * 46 × 2500 books = 115 KB peak RAM (X4 Pro / X4 Classic PSRAM).
+  */
+ #pragma pack(push, 1)
+ struct ViewEntry {
+diff --git a/src/activities/home/Ao3IndexActivity.cpp b/src/activities/home/Ao3IndexActivity.cpp
+index 6c5ed1e..b037c2c 100644
+--- a/src/activities/home/Ao3IndexActivity.cpp
++++ b/src/activities/home/Ao3IndexActivity.cpp
+@@ -186,7 +186,7 @@ void Ao3IndexActivity::runHeapCheck() {
+ 
+       if (!isExistingBook) {
+         state = State::ERROR;
+-        errorMessage = "AO3 library full (1000 books).";
++        errorMessage = "AO3 library full (" + std::to_string(MAX_LIBRARY_BOOKS) + " books).";
+         return;
+       }
+     }
+@@ -195,7 +195,7 @@ void Ao3IndexActivity::runHeapCheck() {
+     // Directory mode: Block immediately if full (no need to waste time scanning folders)
+     if (isLibraryFull()) {
+       state = State::ERROR;
+-      errorMessage = "AO3 library full (1000 books).";
++      errorMessage = "AO3 library full (" + std::to_string(MAX_LIBRARY_BOOKS) + " books).";
+       return;
+     }
+     state = State::DIR_LOAD_SETTINGS;
+@@ -557,7 +557,7 @@ void Ao3IndexActivity::tickDirIndexing() {
+ 
+   if (isLibraryFull()) {
+     state = State::DIR_COMPLETE;
+-    errorMessage = "AO3 library full (1000 books).";
++    errorMessage = "AO3 library full (" + std::to_string(MAX_LIBRARY_BOOKS) + " books).";
+     requestUpdate(true);
+     return;
+   }

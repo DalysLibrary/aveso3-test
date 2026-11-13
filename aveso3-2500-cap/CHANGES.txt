@@ -1,0 +1,41 @@
+AvesO3 fork — release notes
+============================
+
+Library index cap: 1000 → 2500 books
+-------------------------------------
+MAX_LIBRARY_BOOKS is now 2500.
+
+While the library screen is open, the firmware keeps one 46-byte sort key
+per book in a single allocation. At 2500 books that is about 115 KB.
+Full records stay on the SD card in /.crosspoint/ao3_library_index.bin
+(about 600 KB when the index is full). Indexing still runs in small
+batches and frees that list first.
+
+Safe on
+-------
+- Xteink X4 Pro. ESP32-S3 with 8 MB PSRAM. The 115 KB list is placed in
+  PSRAM, not the small internal heap.
+- Xteink X4 Classic. Same ESP32-S3 and same 8 MB PSRAM as the X4 Pro.
+  No touchscreen and no frontlight does not change this budget, so the
+  raised cap is safe there too.
+
+Not safe on
+-----------
+- Xteink X3 and the original X4. Those are ESP32-C3 boards with no PSRAM
+  and about 380 KB of RAM. Do not flash this fork on them. A library of
+  this size can reboot the reader when it opens. 1000 books is the safe
+  cap on those devices.
+
+The stock release workflow still builds firmware.bin for the C3. Do not
+publish or install that file from this fork. Install firmware-x4pro.bin
+on an X4 Pro. X4 Classic is not in that workflow; build it with
+`pio run -e x4c-gh_release`.
+
+Existing indexes at or under 2500 books still open. An index written
+past 1000 books will not open on stock AvesO3.
+
+Building a bin
+--------------
+Fork the repo, commit these changes, and push a tag (for example
+v1.6.0-lib2500). The "Compile Release" workflow builds
+firmware-x4pro.bin and attaches it as an artifact.
