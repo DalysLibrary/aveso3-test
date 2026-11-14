@@ -14,8 +14,12 @@ struct CompactIndexRecord;
 // The folding idea (lower case, accents ignored) and the fold table come from VaultInk's search.
 namespace ao3search {
 
-constexpr size_t kMaxWords = 6;    // words in one search; extra words are ignored
-constexpr size_t kWordBytes = 32;  // bytes kept per word (including the terminating NUL)
+constexpr size_t kMaxWords = 6;    // search terms (words and quoted phrases together); extra terms are ignored
+constexpr size_t kWordBytes = 48;  // bytes kept per term (including the terminating NUL)
+
+// Separates the fields of one searched text (title, author, series ...), so a quoted phrase never runs from one
+// field into the next. Tag text and file path are separated by a TAB in the tag file, tags by commas.
+constexpr char kFieldSeparator = '\x1f';
 
 // Bucket for the "Title starts with" / "Author starts with" filter:
 //   'A'..'Z'  the first letter, with accents ignored ("Élan" -> 'E', "Łódź" -> 'L')
@@ -28,9 +32,14 @@ char letterBucket(const char* text);
 // terminating NUL) into `dst`, which always ends with a NUL. Returns the number of bytes written without the NUL.
 size_t foldInto(char* dst, size_t cap, const char* src, size_t srcMax = static_cast<size_t>(-1));
 
-// A search typed by the reader: words separated by spaces or punctuation. A book matches when every word is
-// found somewhere in its title, author, series, fandom or relationships (case and accents ignored).
-// A word with a '-' in front ("-angst") must NOT be found.
+// A search typed by the reader. Case and accents never matter.
+//   fluff angst        a book matches when ANY of the words is found (anywhere in a word: "fluff" finds "Fluffy")
+//   "omega ilya"       a phrase in quotation marks matches only that exact phrase: whole words, in that order,
+//                      inside one tag (or one title, author ...). Text before or after it is fine. Spaces, hyphens and
+//                      other punctuation between the words are interchangeable, so it finds "Omega Ilya Kuryakin",
+//                      "Omega!Ilya" and "omega-ilya", but not "Omega, Ilya" (two tags) or "Omega Space Ilya".
+//   -angst  -"slow burn"  a word or phrase with a minus in front must NOT be found
+// Words and phrases can be mixed:  omega "hurt comfort" -angst
 class Query {
  public:
   Query() { clear(); }
@@ -42,15 +51,16 @@ class Query {
   // `foldedHaystack` must already be folded (see foldInto).
   bool matches(const char* foldedHaystack) const;
 
-  // Which of the words occur in `foldedHaystack`: bit k is set when word k is found. A search can be answered from
+  // Which of the terms occur in `foldedHaystack`: bit k is set when term k is found. A search can be answered from
   // several pieces of text (the index record, then the tag file) by OR-ing the masks together, then asking
-  // satisfiedBy(). "-word" entries are reported the same way (bit set = found).
+  // satisfiedBy(). Terms with a minus in front are reported the same way (bit set = found).
   uint8_t foundMask(const char* foldedHaystack) const;
   bool satisfiedBy(uint8_t mask) const;
 
  private:
-  char words_[kMaxWords][kWordBytes];
+  char words_[kMaxWords][kWordBytes];  // a word, or a phrase as lower-case words separated by single spaces
   bool exclude_[kMaxWords];
+  bool phrase_[kMaxWords];
   uint8_t count_;
 };
 

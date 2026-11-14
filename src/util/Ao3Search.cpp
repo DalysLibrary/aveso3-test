@@ -110,6 +110,47 @@ bool isSeparator(char c) {
   return !((u >= 'a' && u <= 'z') || (u >= '0' && u <= '9') || u == '\'');
 }
 
+// Characters that end a tag or a field: a phrase never runs across them.
+bool isBoundary(unsigned char c) { return c == ',' || c == ';' || c == '\t' || c == static_cast<unsigned char>(kFieldSeparator); }
+
+// Is the phrase (lower-case words separated by single spaces) in the folded text? The words must be whole words, one
+// right after the other, with nothing but separators between them and no tag or field boundary in between.
+bool phraseFound(const char* hay, const char* phrase) {
+  const unsigned char* p = reinterpret_cast<const unsigned char*>(hay);
+  while (*p) {
+    while (*p && isSeparator(static_cast<char>(*p))) p++;
+    if (!*p) return false;
+
+    // try to match the whole phrase starting at this word
+    const unsigned char* q = p;
+    const char* ph = phrase;
+    for (;;) {
+      const unsigned char* qEnd = q;
+      while (*qEnd && !isSeparator(static_cast<char>(*qEnd))) qEnd++;
+      const char* phEnd = ph;
+      while (*phEnd && *phEnd != ' ') phEnd++;
+      if (static_cast<size_t>(qEnd - q) != static_cast<size_t>(phEnd - ph) ||
+          memcmp(q, ph, static_cast<size_t>(qEnd - q)) != 0) {
+        break;
+      }
+      if (*phEnd == '\0') return true;
+
+      // the phrase goes on: the text must go on with the next word, within the same tag
+      q = qEnd;
+      bool boundary = false;
+      while (*q && isSeparator(static_cast<char>(*q))) {
+        if (isBoundary(*q)) boundary = true;
+        q++;
+      }
+      if (!*q || boundary) break;
+      ph = phEnd + 1;
+    }
+
+    while (*p && !isSeparator(static_cast<char>(*p))) p++;  // no match here: on to the next word
+  }
+  return false;
+}
+
 }  // namespace
 
 size_t foldInto(char* dst, size_t cap, const char* src, size_t srcMax) {
@@ -161,6 +202,7 @@ void Query::clear() {
   for (size_t k = 0; k < kMaxWords; k++) {
     words_[k][0] = '\0';
     exclude_[k] = false;
+    phrase_[k] = false;
   }
 }
 
@@ -168,13 +210,60 @@ void Query::parse(const char* text) {
   clear();
   if (!text) return;
 
+  // Curly quotation marks (some keyboards produce them) count as plain ones.
+  char raw[128];
+  size_t rawLen = 0;
+  for (size_t i = 0; text[i] && rawLen + 1 < sizeof(raw);) {
+    const unsigned char c0 = static_cast<unsigned char>(text[i]);
+    if (c0 == 0xE2 && static_cast<unsigned char>(text[i + 1]) == 0x80 &&
+        (static_cast<unsigned char>(text[i + 2]) == 0x9C || static_cast<unsigned char>(text[i + 2]) == 0x9D)) {
+      raw[rawLen++] = '"';
+      i += 3;
+    } else {
+      raw[rawLen++] = text[i++];
+    }
+  }
+  raw[rawLen] = '\0';
+
   char folded[128];
-  const size_t n = foldInto(folded, sizeof(folded), text);
+  const size_t n = foldInto(folded, sizeof(folded), raw);
 
   size_t i = 0;
   while (i < n && count_ < kMaxWords) {
-    while (i < n && isSeparator(folded[i])) i++;
-    if (i >= n) break;
+    if (folded[i] == '"') {
+      // A phrase: everything up to the closing quotation mark (or the end of the text).
+      const size_t open = i;
+      size_t close = i + 1;
+      while (close < n && folded[close] != '"') close++;
+      i = (close < n) ? close + 1 : close;
+
+      char* dst = words_[count_];
+      size_t len = 0;
+      size_t k = open + 1;
+      while (k < close) {
+        while (k < close && isSeparator(folded[k])) k++;
+        const size_t start = k;
+        while (k < close && !isSeparator(folded[k])) k++;
+        const size_t wordLen = k - start;
+        if (wordLen == 0) continue;
+        const size_t need = wordLen + (len > 0 ? 1 : 0);
+        if (len + need >= kWordBytes) break;  // too long: keep the words that fit
+        if (len > 0) dst[len++] = ' ';
+        memcpy(dst + len, folded + start, wordLen);
+        len += wordLen;
+      }
+      dst[len] = '\0';
+      if (len == 0) continue;
+      phrase_[count_] = true;
+      exclude_[count_] = open >= 1 && folded[open - 1] == '-' && (open == 1 || folded[open - 2] == ' ' || folded[open - 2] == '\t');
+      count_++;
+      continue;
+    }
+
+    if (isSeparator(folded[i])) {
+      i++;
+      continue;
+    }
 
     const size_t start = i;
     while (i < n && !isSeparator(folded[i])) i++;
@@ -204,17 +293,27 @@ uint8_t Query::foundMask(const char* foldedHaystack) const {
   uint8_t mask = 0;
   if (!foldedHaystack) return mask;
   for (uint8_t k = 0; k < count_; k++) {
-    if (strstr(foldedHaystack, words_[k]) != nullptr) mask |= static_cast<uint8_t>(1u << k);
+    const bool found = phrase_[k] ? phraseFound(foldedHaystack, words_[k]) : strstr(foldedHaystack, words_[k]) != nullptr;
+    if (found) mask |= static_cast<uint8_t>(1u << k);
   }
   return mask;
 }
 
+// A book is wanted when at least one wanted word or phrase is found (or there are only excluded terms),
+// and none of the excluded ones is found.
 bool Query::satisfiedBy(uint8_t mask) const {
+  bool hasWanted = false;
+  bool foundWanted = false;
   for (uint8_t k = 0; k < count_; k++) {
     const bool found = (mask & (1u << k)) != 0;
-    if (found == exclude_[k]) return false;  // wanted word missing, or excluded word present
+    if (exclude_[k]) {
+      if (found) return false;
+    } else {
+      hasWanted = true;
+      if (found) foundWanted = true;
+    }
   }
-  return true;
+  return !hasWanted || foundWanted;
 }
 
 bool recordMatches(const Query& query, const CompactIndexRecord& rec) {
@@ -231,7 +330,7 @@ uint8_t recordFoundMask(const Query& query, const CompactIndexRecord& rec) {
     if (field[0] == '\0' || used + 2 >= sizeof(hay)) return;
     used += foldInto(hay + used, sizeof(hay) - used, field, fieldBytes);
     if (used + 1 < sizeof(hay)) {
-      hay[used++] = ' ';
+      hay[used++] = kFieldSeparator;
       hay[used] = '\0';
     }
   };

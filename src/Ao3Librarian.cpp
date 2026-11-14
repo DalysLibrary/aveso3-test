@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <vector>
 
 namespace {
 
@@ -1176,7 +1177,10 @@ bool Ao3Librarian::setRecordFinished(const std::string& epubPath, bool finished)
 
 int Ao3Librarian::sanitizeIndex() {
     const char* indexPath = "/.crosspoint/ao3_library_index.bin";
-    if (!Storage.exists(indexPath)) return 0;
+    if (!Storage.exists(indexPath)) {
+        ao3text::pruneToHashes(std::vector<uint32_t>());
+        return 0;
+    }
 
     HalFile f = Storage.open(indexPath, O_RDWR);
     if (!f) return -1;
@@ -1202,11 +1206,17 @@ int Ao3Librarian::sanitizeIndex() {
     static constexpr size_t kFilepathLen    = 256;
 
     int tombstoned = 0;
+    bool scanComplete = true;
+    std::vector<uint32_t> liveHashes;
+    liveHashes.reserve(recordCount);
     CompactIndexRecord rec;
 
     for (uint16_t i = 0; i < recordCount; i++) {
         f.seek(offsetOf(i));
-        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) {
+            scanComplete = false;
+            break;
+        }
 
         if (rec.flags & 0x01) continue; // already tombstoned
 
@@ -1232,7 +1242,9 @@ int Ao3Librarian::sanitizeIndex() {
             }
         }
 
-        if (!valid) {
+        if (valid) {
+            liveHashes.push_back(rec.cacheHash);
+        } else {
             rec.flags |= 0x01;
             f.seek(offsetOf(i));
             f.write((uint8_t*)&rec, sizeof(rec));
@@ -1244,6 +1256,17 @@ int Ao3Librarian::sanitizeIndex() {
     }
 
     f.close();
+    if (!scanComplete) {
+        LOG_ERR("AO3L", "sanitizeIndex: index ended before all records could be read");
+        return -1;
+    }
+
+    std::sort(liveHashes.begin(), liveHashes.end());
+    liveHashes.erase(std::unique(liveHashes.begin(), liveHashes.end()), liveHashes.end());
+    if (!ao3text::pruneToHashes(liveHashes)) {
+        LOG_ERR("AO3L", "sanitizeIndex: could not prune AO3 search text file");
+    }
+
     if (tombstoned > 0) {
         LOG_INF("AO3L", "sanitizeIndex: removed %d ghost record(s)", tombstoned);
     }

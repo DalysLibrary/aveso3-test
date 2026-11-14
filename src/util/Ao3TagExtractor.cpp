@@ -104,53 +104,6 @@ int matchLabel(const char* p, size_t n, size_t* after) {
   return -1;
 }
 
-// Number of words in s[0, n): runs of characters between spaces that contain a letter or digit (or any non-ASCII
-// character). Lone punctuation such as the dash in "Alternate Universe - Coffee Shop" is not a word.
-int countWords(const char* s, size_t n) {
-  int words = 0;
-  bool inToken = false;
-  bool hasLetter = false;
-  for (size_t i = 0; i <= n; i++) {
-    const bool space = (i == n) || s[i] == ' ';
-    if (space) {
-      if (inToken && hasLetter) words++;
-      inToken = false;
-      hasLetter = false;
-    } else {
-      inToken = true;
-      const uint8_t c = static_cast<uint8_t>(s[i]);
-      if (isAlnum(c) || c >= 0x80) hasLetter = true;
-    }
-  }
-  return words;
-}
-
-// Removes, in place, every comma-separated tag that has more than kMaxTagWords words (and empty ones).
-// Returns the new length. The result is never longer than the input, so it can be written over it.
-size_t dropLongTags(char* s, size_t len) {
-  size_t out = 0;
-  size_t i = 0;
-  while (i < len) {
-    size_t j = i;
-    while (j < len && s[j] != ',') j++;  // this tag is s[i, j)
-    const int words = countWords(s + i, j - i);
-    if (words >= 1 && words <= kMaxTagWords) {
-      if (out > 0) s[out++] = ',';  // out never gets ahead of i, so nothing unread is overwritten
-      memmove(s + out, s + i, j - i);
-      out += j - i;
-    }
-    i = j + 1;
-  }
-  size_t lead = 0;
-  while (lead < out && s[lead] == ' ') lead++;
-  if (lead > 0) {
-    memmove(s, s + lead, out - lead);
-    out -= lead;
-  }
-  s[out] = '\0';
-  return out;
-}
-
 // Does the line start with one of the other labels ("Rating:", "Stats:", ...)?
 bool startsWithOtherLabel(const char* p, size_t n) {
   for (const char* label : kOtherLabels) {
@@ -388,7 +341,6 @@ void TagExtractor::storeValue(int label, char* value) {
     len -= 2;
     value[len] = '\0';
   }
-  len = dropLongTags(value, len);  // sentence-like tags (more than kMaxTagWords words) are left out
   if (len > kValueBytes - 1) {
     len = kValueBytes - 1;
     while (len > 0 && (static_cast<uint8_t>(value[len]) & 0xC0) == 0x80) len--;  // do not cut a character in half

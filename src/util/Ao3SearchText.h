@@ -88,6 +88,9 @@ uint8_t maskFor(const std::vector<Hit>& hits, uint32_t hash);
 // Adds a line for a book. The file is created if needed.
 bool appendLine(uint32_t hash, const char* path, const char* text);
 
+// Removes search-text rows whose book hash is no longer present in the live library index.
+bool pruneToHashes(const std::vector<uint32_t>& liveHashes);
+
 // Hashes of all books that have a line, sorted.
 void loadHashes(std::vector<uint32_t>& out);
 

@@ -26,6 +26,67 @@ bool appendLine(uint32_t hash, const char* path, const char* text) {
   return written == n;
 }
 
+bool pruneToHashes(const std::vector<uint32_t>& liveHashes) {
+  if (!Storage.exists(kSearchTextPath)) return true;
+
+  const char* tempPath = "/.crosspoint/ao3_tag_text.tsv.tmp";
+  const char* backupPath = "/.crosspoint/ao3_tag_text.tsv.bak";
+  Storage.remove(tempPath);
+
+  HalFile in;
+  if (!Storage.openFileForRead("AO3T", kSearchTextPath, in)) return false;
+
+  HalFile out;
+  if (!Storage.openFileForWrite("AO3T", tempPath, out)) {
+    in.close();
+    return false;
+  }
+
+  auto splitter = std::unique_ptr<LineSplitter>(new LineSplitter());  // ~1 KB: kept off the stack
+  bool writeOk = true;
+  const auto onLine = [&](const char* line, size_t len) {
+    if (!writeOk) return;
+    uint32_t hash;
+    const char* rest;
+    if (!parseLine(line, hash, &rest)) return;
+    if (!std::binary_search(liveHashes.begin(), liveHashes.end(), hash)) return;
+    if (out.write(reinterpret_cast<const uint8_t*>(line), len) != len ||
+        out.write(reinterpret_cast<const uint8_t*>("\n"), 1) != 1) {
+      writeOk = false;
+    }
+  };
+
+  char chunk[512];
+  int got;
+  int rounds = 0;
+  while (writeOk && (got = in.read(chunk, sizeof(chunk))) > 0) {
+    splitter->feed(chunk, static_cast<size_t>(got), onLine);
+    if ((++rounds & 7) == 0) yield();
+  }
+  if (writeOk) splitter->finish(onLine);
+  in.close();
+  out.close();
+
+  if (!writeOk) {
+    Storage.remove(tempPath);
+    return false;
+  }
+
+  // Replace with a rollback path so a failed rename never destroys the existing search file.
+  Storage.remove(backupPath);
+  if (!Storage.rename(kSearchTextPath, backupPath)) {
+    Storage.remove(tempPath);
+    return false;
+  }
+  if (!Storage.rename(tempPath, kSearchTextPath)) {
+    Storage.rename(backupPath, kSearchTextPath);
+    Storage.remove(tempPath);
+    return false;
+  }
+  Storage.remove(backupPath);
+  return true;
+}
+
 void loadHashes(std::vector<uint32_t>& out) {
   out.clear();
   if (!Storage.exists(kSearchTextPath)) return;

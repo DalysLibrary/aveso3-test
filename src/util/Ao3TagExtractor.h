@@ -9,14 +9,13 @@ constexpr size_t kLineBytes = 1536;     // longest line of page text that is loo
 constexpr size_t kTextBytes = 520;      // longest result
 constexpr size_t kValueBytes = 480;     // longest single list (all additional tags of one book)
 constexpr size_t kMaxScanBytes = 16384;  // stop reading a page after this many bytes
-constexpr int kMaxTagWords = 7;          // a tag with more words than this is left out (see dropLongTags)
 
 // Pulls the author's free-text tags ("Additional Tags:", and "Genre:" on FanFicFare epubs) out of the preface page
 // of an AO3 fic, which is streamed through feed() in pieces of any size. Fandom, relationship and character
 // lists are not kept: the library can already filter by those, and leaving them out keeps the data small.
 //
 // The library's own scraper (Ao3Librarian) keeps only 4 short tags per book. This reads the same page again but
-// keeps all of them (except tags of more than kMaxTagWords words), for the text search.
+// keeps all of them for the text search (subject to the fixed buffer and page-scan safety limits).
 // It works on the page as plain text: HTML tags are removed, block-level
 // tags (<br>, <p>, <div>, </dd>, <dt> ...) end a line, and a line that starts with a label such as
 // "Additional Tags:" gives the list for that label. That fits both AO3's own download and FanFicFare epubs.
