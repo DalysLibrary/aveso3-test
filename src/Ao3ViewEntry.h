@@ -21,7 +21,7 @@ inline uint32_t fnv1a(const char* str) {
  *        from ao3_library_index.bin at library startup.
  *
  * 46 bytes packed (pragma pack 1).
- * 46 × 1000 books = 46 KB peak RAM.
+ * 46 × 2500 books = 115 KB peak RAM (X4 Pro / X4 Classic PSRAM).
  */
 #pragma pack(push, 1)
 struct ViewEntry {

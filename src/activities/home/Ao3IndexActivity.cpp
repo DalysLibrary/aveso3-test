@@ -5,7 +5,6 @@
 #include <Epub.h>
 #include <Logging.h>
 #include <I18n.h>
-#include "../../util/Ao3SearchText.h"
 #include "../../components/UITheme.h"
 #include "../../fontIds.h"
 
@@ -187,7 +186,7 @@ void Ao3IndexActivity::runHeapCheck() {
 
       if (!isExistingBook) {
         state = State::ERROR;
-        errorMessage = "AO3 library full (1000 books).";
+        errorMessage = "AO3 library full (" + std::to_string(MAX_LIBRARY_BOOKS) + " books).";
         return;
       }
     }
@@ -196,7 +195,7 @@ void Ao3IndexActivity::runHeapCheck() {
     // Directory mode: Block immediately if full (no need to waste time scanning folders)
     if (isLibraryFull()) {
       state = State::ERROR;
-      errorMessage = "AO3 library full (1000 books).";
+      errorMessage = "AO3 library full (" + std::to_string(MAX_LIBRARY_BOOKS) + " books).";
       return;
     }
     state = State::DIR_LOAD_SETTINGS;
@@ -224,7 +223,6 @@ void Ao3IndexActivity::loadSettings() {
 
 void Ao3IndexActivity::buildIndexedHashes() {
   indexedHashes.clear();
-  textMissingHashes.clear();
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
   if (!Storage.exists(indexPath)) return;
 
@@ -247,14 +245,6 @@ void Ao3IndexActivity::buildIndexedHashes() {
   }
   f.close();
   std::sort(indexedHashes.begin(), indexedHashes.end());
-
-  // Indexed books that have no search text yet
-  textMissingHashes.clear();
-  std::vector<uint32_t> haveText;
-  ao3text::loadHashes(haveText);
-  for (uint32_t hash : indexedHashes) {
-    if (!std::binary_search(haveText.begin(), haveText.end(), hash)) textMissingHashes.push_back(hash);
-  }
 }
 
 bool Ao3IndexActivity::isExcluded(const std::string& path) const {
@@ -444,8 +434,7 @@ void Ao3IndexActivity::tickDirDiscovery() {
       }
       if (ext == "epub") {
         uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
-        if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash) ||
-            std::binary_search(textMissingHashes.begin(), textMissingHashes.end(), hash)) {
+        if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
           unindexedCount++;
         }
       }
@@ -467,11 +456,6 @@ void Ao3IndexActivity::startDirIndexing() {
     if (it == indexedHashes.end() || *it != hash) {
       indexedHashes.insert(it, hash);
     }
-  }
-
-  for (uint32_t hash : failedHashes) {
-    auto it = std::lower_bound(textMissingHashes.begin(), textMissingHashes.end(), hash);
-    if (it != textMissingHashes.end() && *it == hash) textMissingHashes.erase(it);
   }
 
   // Collect up to batchSize unindexed paths. This walk is synchronous because it does
@@ -520,8 +504,7 @@ void Ao3IndexActivity::startDirIndexing() {
         }
         if (ext == "epub") {
           uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(fullChildPath));
-          if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash) ||
-              std::binary_search(textMissingHashes.begin(), textMissingHashes.end(), hash)) {
+          if (!std::binary_search(indexedHashes.begin(), indexedHashes.end(), hash)) {
             pendingBooks.push_back(fullChildPath);
           }
         }
@@ -572,14 +555,9 @@ void Ao3IndexActivity::tickDirIndexing() {
     return;
   }
 
-  // A book that is already in the index only gets its search text added, which needs no room in the library.
-  const bool textOnly = std::binary_search(
-      textMissingHashes.begin(), textMissingHashes.end(),
-      static_cast<uint32_t>(std::hash<std::string>{}(pendingBooks[currentBookIndex])));
-
-  if (!textOnly && isLibraryFull()) {
+  if (isLibraryFull()) {
     state = State::DIR_COMPLETE;
-    errorMessage = "AO3 library full (1000 books).";
+    errorMessage = "AO3 library full (" + std::to_string(MAX_LIBRARY_BOOKS) + " books).";
     requestUpdate(true);
     return;
   }
@@ -595,7 +573,7 @@ bool indexedOk = false;
   Epub epub(filePath, "/.crosspoint");
   if (epub.load(true, true, true)) {
     currentBookTitle = epub.getTitle();
-    indexedOk = textOnly ? Ao3Librarian::indexSearchText(epub) : Ao3Librarian::scrape(epub, /*force=*/true);
+    indexedOk = Ao3Librarian::scrape(epub, /*force=*/true);
   }
 }  // epub destroyed here, so the post log reflects the freed heap
 
@@ -667,7 +645,7 @@ void Ao3IndexActivity::render(RenderLock&& lock) {
   }
   else if (state == State::DIR_DISCOVERY_CONFIRM) {
     char buf[128];
-    sprintf(buf, "%zu book/s to index or update. Continue?", unindexedCount);
+    sprintf(buf, "%zu unindexed book/s found. Index now?", unindexedCount);
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, buf);
     if (!mappedInput.hasTouch()) {
       const auto labels = mappedInput.mapLabels("Cancel", "Index", "", "");
