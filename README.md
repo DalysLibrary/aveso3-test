@@ -10,7 +10,7 @@
 <img src="docs/images/AvesO3/AvesO3cover.jpg" width="100%">
 
 
-- [x] **AO3-style library browser**, complete with summary and metadata square. You can add **up to 1000 books** to the AO3 library.
+- [x] **AO3-style library browser**, complete with summary and metadata square. You can add **up to 2500 books** on PSRAM devices (X4 Pro and the other ESP32-S3 builds) and **up to 1000 books** on the X3/X4.
 - [x] Compatible with **Calibre+FanFicFare epubs** with *<u>*unmodified metadata spine*</u>* and **epubs from AO3**
 - [x] AO3 Library **sorting and filtering** with 2 modes (Automatic & Folder Tree)
 - [x] **Download new chapters** directly from AO3, or by using the *Send to AvesO3 extension*

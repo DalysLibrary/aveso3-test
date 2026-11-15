@@ -1,4 +1,7 @@
 #include "BookActionActivity.h"
+
+#include "../../Ao3Librarian.h"
+#include "../../Ao3LibraryQuery.h"
 #include "../Ao3ArchiveHelper.h"
 
 #include <Epub.h>
@@ -19,6 +22,22 @@
 #include "../reader/Ao3EndOfBookSeriesActivity.h"
 
 #include "fontIds.h"
+
+namespace {
+void drawHeartGlyph(GfxRenderer& renderer, int x, int y, bool filled) {
+  // 9x8 heart. Outline when off, solid when on. E-ink has no gray.
+  static const uint16_t solid[8] = {0b011001100, 0b111111110, 0b111111110, 0b111111110,
+                                     0b011111100, 0b001111000, 0b000110000, 0b000010000};
+  static const uint16_t outline[8] = {0b011001100, 0b100110010, 0b100000010, 0b100000010,
+                                       0b010000100, 0b001001000, 0b000110000, 0b000010000};
+  const uint16_t* rows = filled ? solid : outline;
+  for (int py = 0; py < 8; py++) {
+    for (int px = 0; px < 9; px++) {
+      if (rows[py] & (1u << (8 - px))) renderer.drawPixel(x + px, y + py, true);
+    }
+  }
+}
+}  // namespace
 
 namespace fui = freeink::ui;
 
@@ -69,6 +88,7 @@ int BookActionActivity::logicalRow(int visual) const {
 
   // FULL mode
   int idx = 0;
+  if (hasAo3LibraryInfo) { if (visual == idx) return 8; idx++; } // Mark as Favorite
   if (isEpub || isXtc)   { if (visual == idx) return 0; idx++; } // Status cycle
   if (hasAo3LibraryInfo) { if (visual == idx) return 1; idx++; } // Mark for Later
   if (hasAo3LibraryInfo) { if (visual == idx) return 6; idx++; } // Show AO3 Page QR
@@ -88,6 +108,7 @@ int BookActionActivity::listCount() const {
   }
 
   int n = 1;                      // Delete always present
+  if (hasAo3LibraryInfo)    n++;  // Mark as Favorite
   if (isEpub || isXtc)      n++;  // Status
   if (hasAo3LibraryInfo)    n++;  // Mark for Later
   if (hasAo3LibraryInfo)    n++;  // Show AO3 Page QR
@@ -136,6 +157,10 @@ void BookActionActivity::onEnter() {
     MARKED_FOR_LATER_STORE.loadFromFile();
   }
   isMarkedForLater = MARKED_FOR_LATER_STORE.contains(filePath);
+  if (hasAo3LibraryInfo) {
+    const int flags = Ao3Librarian::getRecordFlags(filePath);
+    isFavourite = flags >= 0 && (flags & kIndexFavourite) != 0;
+  }
 
   const int maxIdx = listCount() - 1;
   if (nav.selected > maxIdx) nav.selected = maxIdx;
@@ -184,6 +209,7 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
       case 5: rowTitles[i] = "Remove from List"; break;
       case 6: rowTitles[i] = "Show AO3 Page QR"; break;
       case 7: rowTitles[i] = "Show Series"; break;
+      case 8: rowTitles[i] = "Mark as Favorite"; break;
     }
 
     if (logicalRow(i) == 1) {
@@ -217,12 +243,28 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
   syncListViewport(uiScreen, props, false);
   uiScreen.list(props);
 
-  // Dither mask over the disabled Status row (always visual row 0)
-  if (currentStatus == BookStatus::MARKED_FOR_LATER && nav.top == 0) {
-    const int pyEnd = std::min(body.y + rowH, body.y + body.height);
-    for (int py = body.y; py < pyEnd; py++)
-      for (int px = body.x; px < body.x + body.width; px++)
-        if ((px + py) % 2 == 0) renderer.drawPixel(px, py, false);
+  int favVisual = -1;
+  int statusVisual = -1;
+  for (int i = 0; i < count; i++) {
+    if (logicalRow(i) == 8) favVisual = i;
+    if (logicalRow(i) == 0) statusVisual = i;
+  }
+  if (favVisual >= nav.top) {
+    const int hy = body.y + (favVisual - nav.top) * rowH + (rowH - 8) / 2;
+    if (hy >= body.y && hy + 8 <= body.y + body.height) {
+      drawHeartGlyph(renderer, body.x + body.width - 28, hy, isFavourite);
+    }
+  }
+
+  // Dither mask over the disabled Status row
+  if (currentStatus == BookStatus::MARKED_FOR_LATER && statusVisual >= nav.top) {
+    const int py0 = body.y + (statusVisual - nav.top) * rowH;
+    if (py0 < body.y + body.height) {
+      const int pyEnd = std::min(py0 + rowH, body.y + body.height);
+      for (int py = std::max(py0, (int)body.y); py < pyEnd; py++)
+        for (int px = body.x; px < body.x + body.width; px++)
+          if ((px + py) % 2 == 0) renderer.drawPixel(px, py, false);
+    }
   }
 }
 
@@ -472,6 +514,13 @@ void BookActionActivity::activateIndex(int index) {
               filePath,
               SeriesReturn::PopToCaller),
           [this](const ActivityResult&) { requestUpdate(true); });
+      break;
+    }
+
+    case 8: {
+      isFavourite = !isFavourite;
+      Ao3Librarian::setRecordFlag(filePath, kIndexFavourite, isFavourite);
+      requestUpdate(true);
       break;
     }
 

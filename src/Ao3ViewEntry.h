@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <cstring>
 #include <algorithm>
-#include "Ao3CompactIndexRecord.h"
+#include "Ao3LibraryQuery.h"
 
 // FNV-1a 32-bit hash. Returns 0 for null/empty strings (sentinel for "no value").
 inline uint32_t fnv1a(const char* str) {
@@ -20,8 +20,11 @@ inline uint32_t fnv1a(const char* str) {
  * @brief In-RAM sort/filter key struct — one per live book, loaded sequentially
  *        from ao3_library_index.bin at library startup.
  *
- * 46 bytes packed (pragma pack 1).
- * 46 × 1000 books = 46 KB peak RAM.
+ * 47 bytes packed (pragma pack 1).
+ * 47 × 2500 books = 118 KB peak RAM on PSRAM boards.
+ * C3 builds keep the 1000-book cap (47 KB).
+ *
+ * filterBits: bits 0-2 reading status, bit 3 favourite, bit 4 AO3-completed.
  */
 #pragma pack(push, 1)
 struct ViewEntry {
@@ -35,6 +38,7 @@ struct ViewEntry {
     uint16_t seriesPart;     // position within series, 0 if not in a series
     char     title[12];      // first 11 chars of title, null-terminated (alphabetic sort)
     char     authorKey[8];   // first 7 chars of author lowercased (author sort)
+    uint8_t  filterBits;
 };
 #pragma pack(pop)
 
@@ -60,5 +64,8 @@ inline ViewEntry buildViewEntry(const CompactIndexRecord& rec) {
     v.rel1Hash      = fnv1a(rec.relationship1);
     v.rel2Hash      = fnv1a(rec.relationship2);
     v.cacheHash     = rec.cacheHash;
+    v.filterBits    = 0;
+    if (rec.flags & kIndexFavourite) v.filterBits |= kFilterFavourite;
+    if (rec.flags & kIndexMetaCompleted) v.filterBits |= kFilterMetaCompleted;
     return v;
 }

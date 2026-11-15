@@ -1,0 +1,68 @@
+AvesO3 fork — release notes
+============================
+
+Library index cap
+-----------------
+MAX_LIBRARY_BOOKS is 2500 on builds with BOARD_HAS_PSRAM, and 1000 on
+the ESP32-C3 build used by the X3 and the original X4.
+
+The gate is the PSRAM flag the X4 Pro (and the other ESP32-S3 boards)
+already compile with. The C3 firmware.bin from the stock release
+workflow stays at 1000. firmware-x4pro.bin is the 2500 build.
+
+While the library screen is open, the firmware keeps one 47-byte sort
+key per book. At 2500 books that is about 118 KB, taken from PSRAM.
+Full records stay on the SD card.
+
+Do not remove the #if. A single 2500 constant would also raise the cap
+in the C3 image.
+
+Library filters
+---------------
+Sort & Filter keeps Fandom, Relationship, Sort, and Order.
+
+Title starts and Author starts open a centered QWERTY grid
+(digits, letters, and & for any other first character). No keys
+selected means that filter is off. Clear wipes the row.
+
+Status opens a tick list. A short tap toggles a box. Nothing ticked
+means the status filter is off. Inside a group, a book may match any
+ticked row. Combine is All or Any across the three groups:
+
+- reading status: Unread, Reading, Finished Reading, Waiting for Chapter,
+  New Chapter Available
+- publication: WIP, Completed in AO3
+- Favorite
+
+WIP is every book whose published chapters do not equal a known planned
+total, including 20/?. Completed in AO3 is published == planned.
+Those two bits are written when a book is indexed. Reindex the library
+once so existing books pick them up. Until then, older books count as WIP.
+
+Text or tag matches the title, author, series, fandom, relationships,
+and the four short tags stored on the book. The tags are read from the
+SD card for that search only. They are not kept as a string list in RAM.
+
+Favorite
+--------
+Mark as Favorite is the first row of the long-press book menu. Tap or
+Select toggles it and leaves the menu open. An outline heart is off, a
+solid heart is on. Favorite is a flag beside the reading status, stored
+in a free bit of the existing index record, so a book can be Reading
+and a favorite at the same time.
+
+Chapters
+--------
+The library row shows published/planned, for example 12/20. An unknown
+planned total shows as 12/?. That second number is stored after the
+existing sidecar when the book is indexed, so a reindex is needed
+before older books show it.
+
+Library Cleanup does about three SD operations per book. At 2500 books
+it takes longer. It does not use more RAM.
+
+Building a bin
+--------------
+Copy these files onto a fork of AvesO3, commit, and push a tag
+(for example v1.6.0-lib2500). The release workflow builds firmware.bin
+(C3, cap 1000) and firmware-x4pro.bin (cap 2500).

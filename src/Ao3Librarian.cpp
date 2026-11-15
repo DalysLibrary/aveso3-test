@@ -1,7 +1,6 @@
 #include "Ao3Librarian.h"
+#include "Ao3LibraryQuery.h"
 #include "activities/Ao3ArchiveHelper.h"
-#include "util/Ao3SearchText.h"
-#include "util/Ao3TagExtractor.h"
 #include <memory>
 #include <Epub.h>
 #include <HalStorage.h>
@@ -10,7 +9,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <vector>
 
 namespace {
 
@@ -33,6 +31,7 @@ class HtmlScraper : public Print {
   char scrapedFandom[32];
   char scrapedRel1[32];
   char scrapedRel2[32];
+  uint16_t plannedChapters = 0;
 
   explicit HtmlScraper(Ao3LibraryMetadata& m) : meta(m), scrapedWorkId(""), scrapedDate(""), hasUpdatedDate(false) {
     memset(buffer, 0, sizeof(buffer));
@@ -267,7 +266,13 @@ class HtmlScraper : public Print {
           if (!isdigit(static_cast<unsigned char>(*p))) okTotal = false;
         }
         unsigned total = 0;
-        if (okTotal) total = static_cast<unsigned>(atoi(after));
+        if (okTotal) {
+          total = static_cast<unsigned>(atoi(after));
+          if (total > 65535u) total = 65535u;
+          plannedChapters = static_cast<uint16_t>(total);
+        } else {
+          plannedChapters = 0;
+        }
         meta.isCompleted = okTotal && total > 0 && meta.chapterCount == static_cast<uint16_t>(total);
       } else {
         meta.chapterCount = static_cast<uint16_t>(atoi(val));
@@ -716,7 +721,7 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
           char tempFandom[32] = {};
           char tempRel1[32] = {};
           char tempRel2[32] = {};
-          if (parseTitlePage(epub, *meta, scrapedWorkId, scrapedDate, tempFandom, tempRel1, tempRel2)) {
+          if (parseTitlePage(epub, *meta, scrapedWorkId, scrapedDate, tempFandom, tempRel1, tempRel2, nullptr)) {
             if (!scrapedWorkId.empty()) {
               epub.saveAo3Info(scrapedWorkId, scrapedDate, meta->isCompleted);
             }
@@ -733,8 +738,10 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
   char scrapedFandom[32] = {};
   char scrapedRel1[32]   = {};
   char scrapedRel2[32]   = {};
+  uint16_t plannedChapters = 0;
 
-  if (!parseTitlePage(epub, *meta, scrapedWorkId, scrapedDate, scrapedFandom, scrapedRel1, scrapedRel2)) return false;
+  if (!parseTitlePage(epub, *meta, scrapedWorkId, scrapedDate, scrapedFandom, scrapedRel1, scrapedRel2,
+                      &plannedChapters)) return false;
 
   strncpy(meta->filepath, epub.getPath().c_str(), 255);
 
@@ -772,6 +779,7 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
   HalFile f;
   if (Storage.openFileForWrite("AO3L", infoPath, f)) {
     f.write((uint8_t*)meta.get(), sizeof(Ao3LibraryMetadata));
+    f.write((uint8_t*)&plannedChapters, sizeof(plannedChapters));
     f.close();
 
     CompactIndexRecord rec;
@@ -787,43 +795,15 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
     rec.seriesPart = meta->seriesPart;
     rec.cacheHash  = static_cast<uint32_t>(
                          std::hash<std::string>{}(epub.getPath()));
+    if (meta->isCompleted) rec.flags |= kIndexMetaCompleted;
 
     if (!writeIndexRecord(rec)) {
         return false;
     }
 
-    // Best effort: the book is indexed whether or not its tag text could be recorded.
-    indexSearchText(epub);
-
     return true;
   }
   return false;
-}
-
-bool Ao3Librarian::indexSearchText(const Epub& epub) {
-  // Hands the bytes of a page to the extractor and tells the reader to stop once it needs no more.
-  struct Sink final : public Print {
-    ao3text::TagExtractor& extractor;
-    explicit Sink(ao3text::TagExtractor& e) : extractor(e) {}
-    size_t write(uint8_t b) override { return extractor.feed(&b, 1) ? 1 : 0; }
-    size_t write(const uint8_t* buffer, size_t size) override { return extractor.feed(buffer, size) ? size : 0; }
-  };
-
-  auto extractor = std::unique_ptr<ao3text::TagExtractor>(new ao3text::TagExtractor());
-
-  // Same pages as parseTitlePage: the first three spine items (a cover page may come first).
-  const int itemsToCheck = std::min(3, epub.getSpineItemsCount());
-  for (int i = 0; i < itemsToCheck; i++) {
-    extractor->startPage();
-    Sink sink(*extractor);
-    epub.readItemContentsToStream(epub.getSpineItem(i).href, sink, 1024);
-    extractor->finish();
-    if (extractor->hasText()) break;  // found the preface; the chapters are not needed
-  }
-
-  const std::string& path = epub.getPath();
-  const uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(path));
-  return ao3text::appendLine(hash, path.c_str(), extractor->text());
 }
 
 bool Ao3Librarian::getLibraryInfo(const Epub& epub, Ao3LibraryMetadata& meta) {
@@ -845,7 +825,8 @@ bool Ao3Librarian::parseTitlePage(const Epub& epub,
                                   std::string& scrapedDate,
                                   char* scrapedFandom,
                                   char* scrapedRel1,
-                                  char* scrapedRel2) {
+                                  char* scrapedRel2,
+                                  uint16_t* plannedChapters) {
   if (epub.getSpineItemsCount() == 0) return false;
 
   // Check up to the first 3 spine items to account for internal cover pages
@@ -878,6 +859,9 @@ bool Ao3Librarian::parseTitlePage(const Epub& epub,
         scrapedRel1[31] = '\0';
         strncpy(scrapedRel2, scraper->scrapedRel2, 31);
         scrapedRel2[31] = '\0';
+      }
+      if (plannedChapters && scraper->plannedChapters != 0) {
+        *plannedChapters = scraper->plannedChapters;
       }
     }
   }
@@ -998,14 +982,8 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
                           check.read(&version, 1) == 1 &&
                           check.read((uint8_t*)&recordCountCheck, 2) == 2;
             check.close();
-            if (readOk && memcmp(magic, "AO3X", 4) == 0 && version == 1 && recordCountCheck > MAX_LIBRARY_BOOKS) {
-                // Made on a device that holds more books (for example an X4 Pro card used in an X3). Leave it
-                // alone: deleting it would throw away the whole library index.
-                LOG_ERR("AO3L", "index holds %u books, this build holds %u: not modified", (unsigned)recordCountCheck,
-                        (unsigned)MAX_LIBRARY_BOOKS);
-                return false;
-            }
-            if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1) {
+            if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1 ||
+                recordCountCheck > MAX_LIBRARY_BOOKS) {
                 Storage.remove(indexPath);
                 needsCreate = true;
             }
@@ -1046,6 +1024,7 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
 
     int32_t  updateSlot     = -1;
     uint32_t preservedSeq   = 0;
+    uint8_t  preservedFlags = 0;
     int32_t  freeSlot       = -1;
     uint16_t liveCount      = 0;
     CompactIndexRecord existing;
@@ -1060,6 +1039,7 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
             if (existing.cacheHash == rec.cacheHash) {
                 updateSlot   = i;
                 preservedSeq = existing.addedSequence;
+                preservedFlags = existing.flags;
             }
         }
     }
@@ -1068,6 +1048,7 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
 
     if (updateSlot >= 0) {
         recToWrite.addedSequence = preservedSeq;
+        recToWrite.flags |= preservedFlags & (kIndexFavourite | kIndexFinished);
         f.seek(offsetOf(updateSlot));
         f.write((uint8_t*)&recToWrite, sizeof(recToWrite));
         f.close();
@@ -1181,12 +1162,82 @@ bool Ao3Librarian::setRecordFinished(const std::string& epubPath, bool finished)
     return false;
 }
 
+bool Ao3Librarian::setRecordFlag(const std::string& epubPath, uint8_t bit, bool on) {
+    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+    if (!Storage.exists(indexPath)) return false;
+
+    HalFile f = Storage.open(indexPath, O_RDWR);
+    if (!f) return false;
+
+    char     magic[4];
+    uint8_t  version;
+    uint16_t recordCount;
+    bool readOk = f.read(magic, 4) == 4 &&
+                  f.read(&version, 1) == 1 &&
+                  f.read((uint8_t*)&recordCount, 2) == 2;
+
+    if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1) {
+        f.close();
+        return false;
+    }
+
+    uint32_t targetHash = static_cast<uint32_t>(std::hash<std::string>{}(epubPath));
+
+    CompactIndexRecord rec;
+    for (uint16_t i = 0; i < recordCount; i++) {
+        f.seek(offsetOf(i));
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+
+        if (!(rec.flags & kIndexTombstone) && rec.cacheHash == targetHash) {
+            if (on) rec.flags |= bit;
+            else rec.flags &= static_cast<uint8_t>(~bit);
+            f.seek(offsetOf(i));
+            f.write((uint8_t*)&rec, sizeof(rec));
+            f.close();
+            return true;
+        }
+    }
+
+    f.close();
+    return false;
+}
+
+int Ao3Librarian::getRecordFlags(const std::string& epubPath) {
+    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+    if (!Storage.exists(indexPath)) return -1;
+
+    HalFile f = Storage.open(indexPath, O_RDONLY);
+    if (!f) return -1;
+
+    char     magic[4];
+    uint8_t  version;
+    uint16_t recordCount;
+    bool readOk = f.read(magic, 4) == 4 &&
+                  f.read(&version, 1) == 1 &&
+                  f.read((uint8_t*)&recordCount, 2) == 2;
+
+    if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1) {
+        f.close();
+        return -1;
+    }
+
+    uint32_t targetHash = static_cast<uint32_t>(std::hash<std::string>{}(epubPath));
+    CompactIndexRecord rec;
+    for (uint16_t i = 0; i < recordCount; i++) {
+        f.seek(offsetOf(i));
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+        if (!(rec.flags & kIndexTombstone) && rec.cacheHash == targetHash) {
+            f.close();
+            return rec.flags;
+        }
+    }
+    f.close();
+    return -1;
+}
+
 int Ao3Librarian::sanitizeIndex() {
     const char* indexPath = "/.crosspoint/ao3_library_index.bin";
-    if (!Storage.exists(indexPath)) {
-        ao3text::pruneToHashes(std::vector<uint32_t>());
-        return 0;
-    }
+    if (!Storage.exists(indexPath)) return 0;
 
     HalFile f = Storage.open(indexPath, O_RDWR);
     if (!f) return -1;
@@ -1212,17 +1263,11 @@ int Ao3Librarian::sanitizeIndex() {
     static constexpr size_t kFilepathLen    = 256;
 
     int tombstoned = 0;
-    bool scanComplete = true;
-    std::vector<uint32_t> liveHashes;
-    liveHashes.reserve(recordCount);
     CompactIndexRecord rec;
 
     for (uint16_t i = 0; i < recordCount; i++) {
         f.seek(offsetOf(i));
-        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) {
-            scanComplete = false;
-            break;
-        }
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
 
         if (rec.flags & 0x01) continue; // already tombstoned
 
@@ -1248,9 +1293,7 @@ int Ao3Librarian::sanitizeIndex() {
             }
         }
 
-        if (valid) {
-            liveHashes.push_back(rec.cacheHash);
-        } else {
+        if (!valid) {
             rec.flags |= 0x01;
             f.seek(offsetOf(i));
             f.write((uint8_t*)&rec, sizeof(rec));
@@ -1262,17 +1305,6 @@ int Ao3Librarian::sanitizeIndex() {
     }
 
     f.close();
-    if (!scanComplete) {
-        LOG_ERR("AO3L", "sanitizeIndex: index ended before all records could be read");
-        return -1;
-    }
-
-    std::sort(liveHashes.begin(), liveHashes.end());
-    liveHashes.erase(std::unique(liveHashes.begin(), liveHashes.end()), liveHashes.end());
-    if (!ao3text::pruneToHashes(liveHashes)) {
-        LOG_ERR("AO3L", "sanitizeIndex: could not prune AO3 search text file");
-    }
-
     if (tombstoned > 0) {
         LOG_INF("AO3L", "sanitizeIndex: removed %d ghost record(s)", tombstoned);
     }

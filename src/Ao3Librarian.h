@@ -66,6 +66,8 @@ class Ao3Librarian {
    */
   static bool tombstoneRecord(const std::string& epubPath);
   static bool setRecordFinished(const std::string& epubPath, bool finished);
+  static bool setRecordFlag(const std::string& epubPath, uint8_t bit, bool on);
+  static int getRecordFlags(const std::string& epubPath);
 
   /**
    * @brief Tombstones any index record whose epub file or ao3_library_info
@@ -73,14 +75,6 @@ class Ao3Librarian {
    * @return Number of records tombstoned, or -1 on index open failure.
    */
   static int sanitizeIndex();
-
-  /**
-   * @brief Reads the full tag lists (fandoms, relationships, characters, additional tags ...) from the
-   *        epub's preface page and records them, together with the file path, in the search text file
-   *        (see util/Ao3SearchText.h). Does not touch the sidecar or the index record.
-   * @return true if the line was written (even when the page held no recognisable lists).
-   */
-  static bool indexSearchText(const Epub& epub);
 
  private:
   /**
@@ -92,5 +86,6 @@ class Ao3Librarian {
                              std::string& scrapedDate,
                              char* scrapedFandom,
                              char* scrapedRel1,
-                             char* scrapedRel2);
+                             char* scrapedRel2,
+                             uint16_t* plannedChapters);
 };

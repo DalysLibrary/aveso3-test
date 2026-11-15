@@ -9,7 +9,6 @@
 #include "../../Ao3ViewEntry.h"
 #include "../../Ao3SortFilterState.h"
 #include "../../util/ButtonNavigator.h"
-#include "../../util/Ao3Search.h"
 #include "Ao3LibrarySettingsActivity.h"
 
 #include "../../components/UiAppHost.h"
@@ -60,8 +59,8 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
     FILTER_PANEL,
     FANDOM_PICKER,
     RELATIONSHIP_PICKER,
-    TITLE_LETTER_PICKER,
-    AUTHOR_LETTER_PICKER,
+    LETTER_GRID,
+    STATUS_TICKS,
     MANAGE_PANEL
   };
 
@@ -76,6 +75,7 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   Ao3LibraryMetadata      pageCache[3];
   BookStatus              pageCacheStatus[3] = {BookStatus::START, BookStatus::START, BookStatus::START};
   int                     pageCacheMarkedPosition[3] = {-1, -1, -1};
+  uint16_t                pageCachePlanned[3] = {0, 0, 0};
   std::vector<std::string> wrappedSummary[3];
   int  cachedPage  = -1;
   bool buttonsSetup = false;
@@ -93,23 +93,16 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   std::string folderTreeRelationship;
   
   std::vector<uint32_t> allowedHashes;
-  // Rows of the Sort & Filter panel, top to bottom.
-  static constexpr int kRowFandom       = 0;
-  static constexpr int kRowRelationship = 1;
-  static constexpr int kRowTitleLetter  = 2;
-  static constexpr int kRowAuthorLetter = 3;
-  static constexpr int kRowSearch       = 4;
-  static constexpr int kRowSort         = 5;
-  static constexpr int kRowOrder        = 6;
-  static constexpr int kRowConfirm      = 7;
-  static constexpr int kRowCount        = 8;
-  int overlayRowIndex = 0; // one of the kRow* values above
-
-  // Text search typed in the Sort & Filter panel, split into words once per list rebuild.
-  ao3search::Query searchQuery_;
-  // "Hide finished" setting as read by the last rebuildViewEntries(); the letter pickers use it for their counts.
-  bool hideFinished_ = false;
+  int overlayRowIndex = 0; // 0 fandom, 1 relationship, 2 title, 3 author, 4 status, 5 text, 6 sort, 7 order, 8 confirm
   int managePanelRowIndex = 0; // 0=Index New Books, 1=AO3 Library Settings
+  int overlayTop_ = 48;
+  int overlayBottom_ = 368;
+  int overlayRow0Y_ = 90;
+  int overlayRowPitch_ = 32;
+  int letterRow = 0;
+  int letterCol = 0;
+  bool letterForTitle = true;
+  int statusRow = 0;
 
   // Pickers support
   std::vector<std::string> uniqueFandoms;
@@ -157,10 +150,6 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   void rebuildViewEntries();
   void applyStateChange(const SortFilterState& prev, const SortFilterState& next);
   bool passesFilter(const ViewEntry& v, const FilterHashes& h) const;
-  bool passesLetters(const ViewEntry& v) const;
-  bool isPickerState() const;
-  void buildLetterList(bool byAuthor, std::vector<std::string>& out) const;
-  void launchSearch(bool fromPanel);
 
   void buildFandomList(std::vector<std::string>& out) const;
   void buildRelationshipList(const char* fandom, std::vector<std::string>& out, bool& hasNoneEntries) const;
@@ -168,6 +157,9 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   // Rendering subsets
   void renderLibrary(RenderLock& lock);
   void renderFilterOverlay();
+  void renderLetterGrid();
+  void renderStatusTicks();
   void renderPicker();
   void renderManagePanel();
+  bool sidecarTagsMatch(uint32_t cacheHash, const char* query) const;
 };

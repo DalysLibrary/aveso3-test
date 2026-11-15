@@ -18,6 +18,7 @@ class BookActionActivity final : public UiListActivity {
   BookStatus initialStatus = BookStatus::START;
   bool hasAo3LibraryInfo       = false;
   bool isMarkedForLater        = false;
+  bool isFavourite             = false;
   bool isEpub                  = false;
   bool isXtc                   = false;
   bool isAlreadyArchived       = false;
