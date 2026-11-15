@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <HalStorage.h>
+#include <Logging.h>
 
 #include <algorithm>
 #include <memory>
@@ -126,6 +127,7 @@ void collectHits(const ao3search::Query& query, std::vector<Hit>& hits) {
   };
   auto work = std::unique_ptr<Work>(new Work());
   uint16_t seq = 0;
+  bool warned = false;
 
   const auto onLine = [&](const char* line, size_t) {
     uint32_t hash;
@@ -133,7 +135,13 @@ void collectHits(const ao3search::Query& query, std::vector<Hit>& hits) {
     if (!parseLine(line, hash, &rest)) return;
     if (hits.size() >= kMaxHits) {
       resolveHits(hits);  // squeeze out old duplicates; the newest line of each book is kept
-      if (hits.size() >= kMaxHits) return;
+      if (hits.size() >= kMaxHits) {
+        if (!warned) {
+          warned = true;
+          LOG_ERR("AO3T", "tag file holds more books than the library limit; run Library Cleanup");
+        }
+        return;
+      }
     }
     ao3search::foldInto(work->folded, sizeof(work->folded), rest);
     Hit hit;

@@ -187,7 +187,7 @@ void Ao3IndexActivity::runHeapCheck() {
 
       if (!isExistingBook) {
         state = State::ERROR;
-        errorMessage = "AO3 library full (1000 books).";
+        errorMessage = ("AO3 library full (" + std::to_string(MAX_LIBRARY_BOOKS) + " books).");
         return;
       }
     }
@@ -196,7 +196,7 @@ void Ao3IndexActivity::runHeapCheck() {
     // Directory mode: Block immediately if full (no need to waste time scanning folders)
     if (isLibraryFull()) {
       state = State::ERROR;
-      errorMessage = "AO3 library full (1000 books).";
+      errorMessage = ("AO3 library full (" + std::to_string(MAX_LIBRARY_BOOKS) + " books).");
       return;
     }
     state = State::DIR_LOAD_SETTINGS;
@@ -579,7 +579,7 @@ void Ao3IndexActivity::tickDirIndexing() {
 
   if (!textOnly && isLibraryFull()) {
     state = State::DIR_COMPLETE;
-    errorMessage = "AO3 library full (1000 books).";
+    errorMessage = ("AO3 library full (" + std::to_string(MAX_LIBRARY_BOOKS) + " books).");
     requestUpdate(true);
     return;
   }

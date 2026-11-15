@@ -998,8 +998,14 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
                           check.read(&version, 1) == 1 &&
                           check.read((uint8_t*)&recordCountCheck, 2) == 2;
             check.close();
-            if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1 ||
-                recordCountCheck > MAX_LIBRARY_BOOKS) {
+            if (readOk && memcmp(magic, "AO3X", 4) == 0 && version == 1 && recordCountCheck > MAX_LIBRARY_BOOKS) {
+                // Made on a device that holds more books (for example an X4 Pro card used in an X3). Leave it
+                // alone: deleting it would throw away the whole library index.
+                LOG_ERR("AO3L", "index holds %u books, this build holds %u: not modified", (unsigned)recordCountCheck,
+                        (unsigned)MAX_LIBRARY_BOOKS);
+                return false;
+            }
+            if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1) {
                 Storage.remove(indexPath);
                 needsCreate = true;
             }

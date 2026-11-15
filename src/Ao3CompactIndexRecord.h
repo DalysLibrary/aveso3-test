@@ -20,7 +20,14 @@ struct CompactIndexRecord {
 // Exactly 239 bytes on disk
 static_assert(sizeof(CompactIndexRecord) == 239, "CompactIndexRecord must be exactly 239 bytes");
 
+// How many books the AO3 library can hold. The in-memory list of books takes 46 bytes per book (115 KB at 2500), which
+// only devices with PSRAM can spare, so the higher limit is only for builds that have it (X4 Pro, X4 Classic, Paper
+// Mono: the ones that define BOARD_HAS_PSRAM). The X3, the original X4 and every other build keep 1000.
+#ifdef BOARD_HAS_PSRAM
+constexpr uint16_t MAX_LIBRARY_BOOKS = 2500;
+#else
 constexpr uint16_t MAX_LIBRARY_BOOKS = 1000;
+#endif
 constexpr uint32_t INDEX_HEADER_SIZE = 12;
 
 inline uint32_t offsetOf(uint16_t i) {

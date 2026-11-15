@@ -5,6 +5,7 @@
 
 #include <vector>
 
+#include "../Ao3CompactIndexRecord.h"  // MAX_LIBRARY_BOOKS
 #include "Ao3Search.h"
 
 // The "search text" file: one line per AO3 book holding what the library index does not keep -- the book's file
@@ -18,7 +19,10 @@ namespace ao3text {
 
 constexpr const char* kSearchTextPath = "/.crosspoint/ao3_tag_text.tsv";
 constexpr size_t kMaxLineBytes = 900;   // longer lines are ignored (path up to 255 + tags up to 480 fit easily)
-constexpr size_t kMaxHits = 2000;       // lines kept in memory at once during one search
+// Lines kept in memory at once during one search: one per book the library can hold, plus a quarter more for old
+// duplicate lines that the search squeezes out as it goes (see resolveHits). 8 bytes each, so about 10 KB on devices
+// that hold 1000 books and 25 KB on devices that hold 2500. Library Cleanup removes the lines of deleted books.
+constexpr size_t kMaxHits = static_cast<size_t>(MAX_LIBRARY_BOOKS) + MAX_LIBRARY_BOOKS / 4;
 
 // ---- parts that need no storage (also unit tested on a PC) ----------------------------------------------------
 

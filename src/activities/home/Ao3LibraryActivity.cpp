@@ -7,6 +7,7 @@
 #include <HalStorage.h>
 #include <HalDisplay.h>
 #include <Serialization.h>
+#include <Logging.h>
 #include <I18n.h>
 #include <cstdio>
 #include <cstring>
@@ -1787,6 +1788,13 @@ void Ao3LibraryActivity::rebuildViewEntries() {
     yield();
   }
   f.close();
+
+#ifdef BOARD_HAS_PSRAM
+  // Shows on the serial log where the list of books went: with PSRAM in use the free PSRAM drops by roughly
+  // 46 bytes per book while the free internal heap hardly changes.
+  LOG_INF("AO3L", "library list: %u books, free internal heap %u, free PSRAM %u", (unsigned)viewEntries.size(),
+          (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
+#endif
 
   resortViewEntries();
   indexState = IndexState::OK;
