@@ -61,8 +61,8 @@ before older books show it.
 Library Cleanup does about three SD operations per book. At 2500 books
 it takes longer. It does not use more RAM.
 
-Building a bin
---------------
-Copy these files onto a fork of AvesO3, commit, and push a tag
-(for example v1.6.0-lib2500). The release workflow builds firmware.bin
-(C3, cap 1000) and firmware-x4pro.bin (cap 2500).
+The filter sheet is white with black text. Apply is on the sheet,
+the letter grid, and the status list. Clear sits under each filter,
+and Clear all is the first row. The keyboard's OK only stores the
+words; Apply on the sheet runs the search.
+

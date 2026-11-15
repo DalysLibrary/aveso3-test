@@ -93,7 +93,8 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   std::string folderTreeRelationship;
   
   std::vector<uint32_t> allowedHashes;
-  int overlayRowIndex = 0; // 0 fandom, 1 relationship, 2 title, 3 author, 4 status, 5 text, 6 sort, 7 order, 8 confirm
+  int overlayRowIndex = 0;
+  int overlayScroll_ = 0;
   int managePanelRowIndex = 0; // 0=Index New Books, 1=AO3 Library Settings
   int overlayTop_ = 48;
   int overlayBottom_ = 368;
@@ -103,6 +104,8 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   int letterCol = 0;
   bool letterForTitle = true;
   int statusRow = 0;
+  int statusTop_ = 0;
+  int statusPitch_ = 36;
 
   // Pickers support
   std::vector<std::string> uniqueFandoms;
@@ -162,4 +165,7 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   void renderPicker();
   void renderManagePanel();
   bool sidecarTagsMatch(uint32_t cacheHash, const char* query) const;
+  void commitPendingFilters();
+  void clearAllFilters();
+  void clearFandomFilter();
 };
