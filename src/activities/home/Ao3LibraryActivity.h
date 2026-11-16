@@ -100,6 +100,8 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   int overlayBottom_ = 368;
   int overlayRow0Y_ = 90;
   int overlayRowPitch_ = 32;
+  int filterRowY_[16] = {};
+  int filterRowH_[16] = {};
   int letterRow = 0;
   int letterCol = 0;
   bool letterForTitle = true;
@@ -160,11 +162,11 @@ class Ao3LibraryActivity final : public Activity, private UiAppHost {
   // Rendering subsets
   void renderLibrary(RenderLock& lock);
   void renderFilterOverlay();
+  void layoutFilterRows();
   void renderLetterGrid();
   void renderStatusTicks();
   void renderPicker();
   void renderManagePanel();
-  bool sidecarTagsMatch(uint32_t cacheHash, const char* query) const;
   void commitPendingFilters();
   void clearAllFilters();
   void clearFandomFilter();

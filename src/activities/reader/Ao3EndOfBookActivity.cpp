@@ -14,6 +14,7 @@
 #include "HalStorage.h"
 
 #include "Ao3Librarian.h"
+#include "Ao3LibraryQuery.h"
 #include "Ao3MarkedForLaterStore.h"
 #include "activities/network/AO3SyncActivity.h"
 #include "Ao3EndOfBookSeriesActivity.h"
@@ -434,6 +435,7 @@ void Ao3EndOfBookActivity::activateIndex(int index) {
             const auto& ao3Res = std::get<AO3Result>(res.data);
             if (ao3Res.downloaded) {
               epub->saveAo3Info(epub->getAo3WorkId(), ao3Res.scrapedDate, ao3Res.isCompleted);
+              Ao3Librarian::setRecordFlag(path, kIndexMetaCompleted, ao3Res.isCompleted);
               std::string cachePath = epub->getCachePath();
               Storage.remove((cachePath + "/book.bin").c_str());
               Storage.removeDir((cachePath + "/sections").c_str());
@@ -448,15 +450,19 @@ void Ao3EndOfBookActivity::activateIndex(int index) {
                 firstNewChapter -= 1;
               }
               EpubReaderUtils::saveProgress(*epub, firstNewChapter, 0, spineCount, std::nullopt, BookStatus::NEW_CHAPTER_AVAILABLE);
+              Ao3Librarian::setRecordStatus(path, static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE));
             } else {
               if (ao3Res.updateFound) {
                 EpubReaderUtils::saveProgress(*epub, spineCount, 0, spineCount, std::nullopt, BookStatus::NEW_CHAPTER_AVAILABLE);
+                Ao3Librarian::setRecordStatus(path, static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE));
               } else {
                 EpubReaderUtils::saveProgress(*epub, spineCount, 0, spineCount, std::nullopt, BookStatus::WAITING_FOR_CHAPTER);
+                Ao3Librarian::setRecordStatus(path, static_cast<uint8_t>(BookStatus::WAITING_FOR_CHAPTER));
               }
             }
           } else {
             EpubReaderUtils::saveProgress(*epub, spineCount, 0, spineCount, std::nullopt, BookStatus::WAITING_FOR_CHAPTER);
+            Ao3Librarian::setRecordStatus(path, static_cast<uint8_t>(BookStatus::WAITING_FOR_CHAPTER));
           }
           activityManager.goHome();
         });

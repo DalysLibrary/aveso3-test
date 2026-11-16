@@ -1,68 +1,35 @@
-AvesO3 fork — release notes
-============================
+Fork of AvesO3
+Compared with SiliconAves/AvesO3 main at ac79083 (the current GitHub HEAD when this was written).
 
-Library index cap
------------------
-MAX_LIBRARY_BOOKS is 2500 on builds with BOARD_HAS_PSRAM, and 1000 on
-the ESP32-C3 build used by the X3 and the original X4.
+Library size
+The index cap is 2500 books on boards with PSRAM (X4 Pro and the other ESP32-S3 builds) and stays 1000 on the X3/X4 (ESP32-C3). The C3 has no PSRAM, so the book list has to fit in internal RAM. One in-memory entry is 47 bytes. At 2500 books that is about 118 KB, which is fine in PSRAM and too much for the C3.
 
-The gate is the PSRAM flag the X4 Pro (and the other ESP32-S3 boards)
-already compile with. The C3 firmware.bin from the stock release
-workflow stays at 1000. firmware-x4pro.bin is the 2500 build.
+Sort & Filter
+Fandom, Relationship, Sort and Order are unchanged, including Folder Tree mode and Hide Finished.
 
-While the library screen is open, the firmware keeps one 47-byte sort
-key per book. At 2500 books that is about 118 KB, taken from PSRAM.
-Full records stay on the SD card.
+New rows:
+- Title starts and Author starts open a centered QWERTY grid: digits, letters, and &. No keys selected means that filter is off. & is any first character that is not a letter or a digit, so a title starting with a quote, dash or bracket matches & and does not skip ahead to the next letter. Accented Latin letters fold onto the base letter, so É matches E.
+- Status opens a tick list: Combine All/Any, Favorite, Unread, Reading, Finished Reading, Waiting for Chapter, New Chapter Available, WIP, Completed in AO3. No ticks means the filter is off. Inside a group, any ticked row matches. All (the default) means every group that has a tick must match. Any means one group is enough. Marked for Later counts as Unread. WIP is anything that is not a known equal chapter total, including 20/?.
+- Text or tag matches the title, author, series, fandom, both relationships, and the four short tags stored with the book. Those four tags are read from the card for that search only.
 
-Do not remove the #if. A single 2500 constant would also raise the cap
-in the C3 image.
+The sheet is white with black text. Clear all is the first row. Each filter has its own Clear underneath it. Apply is the last row, and it is also on the letter grid and the status list. The keyboard's OK only stores the words. Apply runs the search.
 
-Library filters
----------------
-Sort & Filter keeps Fandom, Relationship, Sort, and Order.
+Chapter count
+A library row shows Chapters: 12/20, or 12/? when AO3 has no planned total. The planned total is two bytes written after the existing book record, so old books stay valid and still show 12/? until they are re-indexed. This does not grow the in-memory entry.
 
-Title starts and Author starts open a centered QWERTY grid
-(digits, letters, and & for any other first character). No keys
-selected means that filter is off. Clear wipes the row.
+Favourite
+Mark as Favorite is the first row of the long-press book menu. The heart is on the right of that row: an outline when off, filled when on. A tap or Select toggles it and the menu stays open. Favourite is its own flag. A book can be Reading, Finished, or anything else and still be a favourite.
 
-Status opens a tick list. A short tap toggles a box. Nothing ticked
-means the status filter is off. Inside a group, a book may match any
-ticked row. Combine is All or Any across the three groups:
+How the new facts are stored
+The index record is still 239 bytes. The flags byte already had the tombstone bit and the Hide Finished bit. This fork uses the spare bits:
+- bit 2 favourite
+- bit 3 completed on AO3
+- bits 4-6 reading status (six values, so three bits, not two)
+- bit 7 unused
 
-- reading status: Unread, Reading, Finished Reading, Waiting for Chapter,
-  New Chapter Available
-- publication: WIP, Completed in AO3
-- Favorite
+The status filter reads those bits. It does not open each book's progress file. The bits are updated when a status is saved from the reader, the long-press menu, a new-chapter download, KOReader sync, or removing Marked for Later. Re-indexing a book keeps the favourite, Hide Finished, and reading-status bits. Library Cleanup refreshes the reading status and the completed bit for every live book, and still removes ghosts.
 
-WIP is every book whose published chapters do not equal a known planned
-total, including 20/?. Completed in AO3 is published == planned.
-Those two bits are written when a book is indexed. Reindex the library
-once so existing books pick them up. Until then, older books count as WIP.
+Run Library Cleanup once after flashing. Until that pass, books indexed by the original firmware have no status bits yet, so the status filter treats them as Unread. Status changes made after flashing are recorded immediately.
 
-Text or tag matches the title, author, series, fandom, relationships,
-and the four short tags stored on the book. The tags are read from the
-SD card for that search only. They are not kept as a string list in RAM.
-
-Favorite
---------
-Mark as Favorite is the first row of the long-press book menu. Tap or
-Select toggles it and leaves the menu open. An outline heart is off, a
-solid heart is on. Favorite is a flag beside the reading status, stored
-in a free bit of the existing index record, so a book can be Reading
-and a favorite at the same time.
-
-Chapters
---------
-The library row shows published/planned, for example 12/20. An unknown
-planned total shows as 12/?. That second number is stored after the
-existing sidecar when the book is indexed, so a reindex is needed
-before older books show it.
-
-Library Cleanup does about three SD operations per book. At 2500 books
-it takes longer. It does not use more RAM.
-
-The filter sheet is white with black text. Apply is on the sheet,
-the letter grid, and the status list. Clear sits under each filter,
-and Clear all is the first row. The keyboard's OK only stores the
-words; Apply on the sheet runs the search.
-
+Not changed
+The dashboard, Hide Finished, the fandom and relationship filters, and removing a finished book from the library. Search still does not keep a full tag list. It only sees the four short tags already stored with each book.

@@ -117,6 +117,15 @@ void drawTickBox(GfxRenderer& renderer, int x, int y, bool on) {
   if (on) renderer.fillRect(x + 3, y + 3, 10, 10, true);
 }
 
+void drawLabelInBox(GfxRenderer& renderer, int x, int y, int w, int h, const char* text, int font, bool black) {
+  const auto style = EpdFontFamily::BOLD;
+  const int tw = renderer.getTextWidth(font, text, style);
+  const int th = renderer.getLineHeight(font);
+  const int tx = x + (w - tw) / 2;
+  const int ty = y + (h - th) / 2;
+  renderer.drawText(font, tx, ty, text, black, style);
+}
+
 void highlightRow(GfxRenderer& renderer, int x, int y, int w, int h) {
   renderer.fillRoundedRect(x, y, w, h, 4, true, true, true, true, LightGray);
 }
@@ -649,10 +658,16 @@ void Ao3LibraryActivity::loop() {
         requestUpdate(true);
         return;
       }
-      const int row = overlayScroll_ + (ty - overlayRow0Y_) / overlayRowPitch_;
-      if (row >= 0 && row < FR_COUNT) {
-        overlayRowIndex = row;
-        if (row == FR_APPLY) render(RenderLock(*this));
+      const int rowHit = [&]() {
+        layoutFilterRows();
+        for (int i = 0; i < FR_COUNT; i++) {
+          if (ty >= filterRowY_[i] && ty < filterRowY_[i] + filterRowH_[i]) return i;
+        }
+        return -1;
+      }();
+      if (rowHit >= 0) {
+        overlayRowIndex = rowHit;
+        if (rowHit == FR_APPLY) render(RenderLock(*this));
         executeFilterAction = true;
       }
     }
@@ -778,6 +793,7 @@ void Ao3LibraryActivity::loop() {
                 if (const auto* typed = std::get_if<KeyboardResult>(&res.data)) {
                   strncpy(pendingState.textQuery, typed->text.c_str(), 31);
                   pendingState.textQuery[31] = '\0';
+                  sanitizeTextQuery(pendingState.textQuery, sizeof(pendingState.textQuery));
                 }
               }
               screenState = ScreenState::FILTER_PANEL;
@@ -1343,31 +1359,85 @@ void Ao3LibraryActivity::renderManagePanel() {
   }
 }
 
-void Ao3LibraryActivity::renderFilterOverlay() {
-  const int screenWidth = renderer.getScreenWidth();
+void Ao3LibraryActivity::layoutFilterRows() {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int startY = 40;
   const int hints = metrics.buttonHintsHeight > 0 ? metrics.buttonHintsHeight : kBottomArrowRaise;
   const int overlayH = renderer.getScreenHeight() - hints - startY;
   overlayTop_ = startY;
   overlayBottom_ = startY + overlayH;
-  const int margin = 12;
-  const int headerH = 26;
-  int pitch = (overlayH - headerH - 4) / FR_COUNT;
-  if (pitch > 28) pitch = 28;
-  if (pitch < 22) pitch = 22;
-  int visible = (overlayH - headerH - 4) / pitch;
-  if (visible < 1) visible = 1;
-  if (visible > FR_COUNT) visible = FR_COUNT;
-  if (overlayRowIndex < overlayScroll_) overlayScroll_ = overlayRowIndex;
-  if (overlayRowIndex >= overlayScroll_ + visible) overlayScroll_ = overlayRowIndex - visible + 1;
-  overlayRowPitch_ = pitch;
-  overlayRow0Y_ = startY + headerH;
+  const int headerH = 28;
+  const int contentTop = startY + headerH;
+  const int contentH = overlayH - headerH - 4;
 
-  renderer.fillRect(0, startY, screenWidth, overlayH, false);
-  renderer.fillRect(0, startY, screenWidth, 1, true);
-  renderer.fillRect(0, startY + overlayH - 2, screenWidth, 2, true);
-  renderer.drawText(UI_12_FONT_ID, margin + 8, startY + 4, "Sort & Filter", true, EpdFontFamily::BOLD);
+  const int nameLine = std::max(14, renderer.getLineHeight(UI_12_FONT_ID));
+  const int smallLine = std::max(10, renderer.getLineHeight(SMALL_FONT_ID));
+  auto isName = [](int row) {
+    return row == FR_FANDOM || row == FR_REL || row == FR_TITLE || row == FR_AUTHOR || row == FR_STATUS ||
+           row == FR_TEXT;
+  };
+  auto isClear = [](int row) {
+    return row == FR_CLEAR_ALL || row == FR_CLEAR_FANDOM || row == FR_CLEAR_REL || row == FR_CLEAR_TITLE ||
+           row == FR_CLEAR_AUTHOR || row == FR_CLEAR_STATUS || row == FR_CLEAR_TEXT;
+  };
+
+  int nameH = nameLine + 12;
+  int clearH = smallLine + 4;
+  int tailH = nameLine + 12;
+  int afterClear = 18;
+  int betweenTail = 22;
+  auto usedHeight = [&]() {
+    int total = 0;
+    for (int i = 0; i < FR_COUNT; i++) {
+      total += isName(i) ? nameH : isClear(i) ? clearH : tailH;
+      if (isClear(i)) total += afterClear;
+      if (i == FR_SORT || i == FR_ORDER) total += betweenTail;
+    }
+    return total;
+  };
+  const int used = usedHeight();
+  if (used < contentH) {
+    const int extra = contentH - used;
+    afterClear += (extra * 2 / 3) / 7;
+    betweenTail += (extra / 3) / 2;
+  } else if (used > contentH) {
+    int over = used - contentH;
+    while (over > 0 && afterClear > 8) {
+      afterClear--;
+      over -= 7;
+    }
+    while (over > 0 && betweenTail > 10) {
+      betweenTail--;
+      over -= 2;
+    }
+    while (over > 0 && nameH > nameLine + 4) {
+      nameH--;
+      tailH--;
+      over -= 9;
+    }
+  }
+
+  int y = contentTop;
+  for (int i = 0; i < FR_COUNT; i++) {
+    filterRowY_[i] = y;
+    filterRowH_[i] = isName(i) ? nameH : isClear(i) ? clearH : tailH;
+    y += filterRowH_[i];
+    if (isClear(i)) y += afterClear;
+    if (i == FR_SORT || i == FR_ORDER) y += betweenTail;
+  }
+  overlayRow0Y_ = contentTop;
+  overlayRowPitch_ = nameH;
+}
+
+void Ao3LibraryActivity::renderFilterOverlay() {
+  const int screenWidth = renderer.getScreenWidth();
+  const int margin = 12;
+  layoutFilterRows();
+
+  renderer.fillRect(0, overlayTop_, screenWidth, overlayBottom_ - overlayTop_, false);
+  renderer.fillRect(0, overlayTop_, screenWidth, 1, true);
+  renderer.fillRect(0, overlayBottom_ - 2, screenWidth, 2, true);
+  renderer.drawText(UI_12_FONT_ID, margin + 8, overlayTop_ + 4, "Sort & Filter", true, EpdFontFamily::BOLD);
 
   auto truncated = [](const char* src) -> std::string {
     if (!src || src[0] == '\0') return "Any";
@@ -1398,14 +1468,21 @@ void Ao3LibraryActivity::renderFilterOverlay() {
   std::string fandomVal = truncated(pendingState.fandom);
   std::string textVal = truncated(pendingState.textQuery);
 
-  for (int row = overlayScroll_; row < overlayScroll_ + visible && row < FR_COUNT; row++) {
-    const int rowY = overlayRow0Y_ + (row - overlayScroll_) * pitch;
+  const int nameLine = renderer.getLineHeight(UI_12_FONT_ID);
+  const int smallLine = renderer.getLineHeight(SMALL_FONT_ID);
+
+  for (int row = 0; row < FR_COUNT; row++) {
+    const int rowY = filterRowY_[row];
+    const int rowH = filterRowH_[row];
+    if (rowY + rowH > overlayBottom_) continue;
     const bool selected = overlayRowIndex == row;
     const bool clearRow = row == FR_CLEAR_ALL || row == FR_CLEAR_FANDOM || row == FR_CLEAR_REL ||
                           row == FR_CLEAR_TITLE || row == FR_CLEAR_AUTHOR || row == FR_CLEAR_STATUS ||
                           row == FR_CLEAR_TEXT;
+    const bool nameRow = row == FR_FANDOM || row == FR_REL || row == FR_TITLE || row == FR_AUTHOR ||
+                         row == FR_STATUS || row == FR_TEXT;
     const bool disabled = row == FR_REL && pendingState.fandom[0] == '\0';
-    if (selected && !disabled) highlightRow(renderer, margin, rowY, screenWidth - 2 * margin, pitch - 2);
+    if (selected && !disabled) highlightRow(renderer, margin, rowY, screenWidth - 2 * margin, rowH);
 
     const char* label = "";
     const char* value = nullptr;
@@ -1436,20 +1513,21 @@ void Ao3LibraryActivity::renderFilterOverlay() {
       case FR_APPLY: label = "Apply"; break;
       default: break;
     }
-    const int textY = rowY + 2;
+    const int font = nameRow || row == FR_SORT || row == FR_ORDER || row == FR_APPLY ? UI_12_FONT_ID : SMALL_FONT_ID;
+    const int line = (font == UI_12_FONT_ID) ? nameLine : smallLine;
+    const int textY = rowY + (rowH - line) / 2;
     if (clearRow) {
-      renderer.drawText(UI_10_FONT_ID, margin + 28, textY, label, true);
-    } else if (row == FR_APPLY) {
-      renderer.drawText(UI_10_FONT_ID, margin + 8, textY, label, true, EpdFontFamily::BOLD);
+      renderer.drawText(SMALL_FONT_ID, margin + 28, textY, label, true);
     } else {
-      renderer.drawText(UI_10_FONT_ID, margin + 8, textY, label, true);
+      renderer.drawText(UI_12_FONT_ID, margin + 8, textY, label, true, EpdFontFamily::BOLD);
     }
     if (value && value[0]) {
       const int valW = renderer.getTextWidth(UI_10_FONT_ID, value);
-      renderer.drawText(UI_10_FONT_ID, screenWidth - margin - valW - 8, textY, value, true);
+      const int valueY = rowY + (rowH - smallLine) / 2;
+      renderer.drawText(UI_10_FONT_ID, screenWidth - margin - valW - 8, valueY, value, true);
     }
     if (disabled) {
-      for (int py = rowY; py < rowY + pitch - 2; py++)
+      for (int py = rowY; py < rowY + rowH; py++)
         for (int px = margin; px < screenWidth - margin; px++)
           if (((px + py) & 1) == 0) renderer.drawPixel(px, py, false);
     }
@@ -1476,9 +1554,8 @@ void Ao3LibraryActivity::renderLetterGrid() {
         highlightRow(renderer, keys[cursor].x, keys[cursor].y, keys[cursor].w, keys[cursor].h);
       if (!on) strokeBox(renderer, keys[cursor].x, keys[cursor].y, keys[cursor].w, keys[cursor].h);
       char label[2] = {keys[cursor].ch, 0};
-      const int tw = renderer.getTextWidth(UI_12_FONT_ID, label);
-      renderer.drawText(UI_12_FONT_ID, keys[cursor].x + (keys[cursor].w - tw) / 2, keys[cursor].y + 8, label, !on,
-                         EpdFontFamily::BOLD);
+      drawLabelInBox(renderer, keys[cursor].x, keys[cursor].y, keys[cursor].w, keys[cursor].h, label, UI_12_FONT_ID,
+                     !on);
     }
   }
   for (int i = cursor; i < n; i++) {
@@ -1486,7 +1563,7 @@ void Ao3LibraryActivity::renderLetterGrid() {
     const bool selected = letterRow >= 4 && ((key.clear && letterCol == 0) || (key.apply && letterCol == 1));
     if (selected) highlightRow(renderer, key.x, key.y, key.w, key.h);
     strokeBox(renderer, key.x, key.y, key.w, key.h);
-    renderer.drawCenteredText(UI_10_FONT_ID, key.y + 8, key.apply ? "Apply" : "Clear");
+    drawLabelInBox(renderer, key.x, key.y, key.w, key.h, key.apply ? "Apply" : "Clear", UI_10_FONT_ID, true);
   }
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONFIRM), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
@@ -1825,8 +1902,13 @@ void Ao3LibraryActivity::loadSortFilterState() {
   activeState.publicationMask = doc["publicationMask"] | 0;
   activeState.favouriteOnly = doc["favouriteOnly"] | false;
   activeState.combine = static_cast<CombineMode>(doc["combine"] | 0);
-  strncpy(activeState.textQuery, doc["textQuery"] | "", 31);
+  char loadedQuery[32];
+  strncpy(loadedQuery, doc["textQuery"] | "", 31);
+  loadedQuery[31] = '\0';
+  strncpy(activeState.textQuery, loadedQuery, 31);
   activeState.textQuery[31] = '\0';
+  sanitizeTextQuery(activeState.textQuery, sizeof(activeState.textQuery));
+  const bool queryChanged = strcmp(loadedQuery, activeState.textQuery) != 0;
 
   if (activeState.sortMode > SortMode::AUTHOR)
     activeState.sortMode = SortMode::ALPHABETIC;
@@ -1852,6 +1934,7 @@ void Ao3LibraryActivity::loadSortFilterState() {
     folderTreeFandom       = doc["folderTreeFandom"]       | std::string(activeState.fandom);
     folderTreeRelationship = doc["folderTreeRelationship"] | std::string(activeState.relationship);
   }
+  if (queryChanged) saveSortFilterState();
 }
 
 void Ao3LibraryActivity::saveSortFilterState() const {
@@ -1985,14 +2068,15 @@ bool Ao3LibraryActivity::passesFilter(const ViewEntry& v, const FilterHashes& h)
     }
   }
 
-  if (!initialPasses(activeState.titleInitials, static_cast<unsigned char>(v.title[0]))) return false;
-  if (!initialPasses(activeState.authorInitials, static_cast<unsigned char>(v.authorKey[0]))) return false;
+  if (!initialPasses(activeState.titleInitials, v.title)) return false;
+  if (!initialPasses(activeState.authorInitials, v.authorKey)) return false;
 
   const bool statusOn = activeState.statusMask != 0;
   const bool pubOn = activeState.publicationMask != 0;
   const bool favOn = activeState.favouriteOnly;
   if (statusOn || pubOn || favOn) {
-    const uint8_t status = v.filterBits & kFilterStatusMask;
+    uint8_t status = v.filterBits & kFilterStatusMask;
+    if (status == 5) status = 0;  // Marked for Later counts as Unread
     const bool statusHit = statusOn && status <= 4 && (activeState.statusMask & (1u << status)) != 0;
     const bool completed = (v.filterBits & kFilterMetaCompleted) != 0;
     const bool pubHit = (activeState.publicationMask & 0x01 && !completed) ||
@@ -2009,31 +2093,56 @@ bool Ao3LibraryActivity::passesFilter(const ViewEntry& v, const FilterHashes& h)
   return true;
 }
 
-bool Ao3LibraryActivity::sidecarTagsMatch(uint32_t cacheHash, const char* query) const {
-  if (!query || query[0] == '\0') return true;
-  const std::string path = "/.crosspoint/epub_" + std::to_string(cacheHash) + "/ao3_library_info";
-  HalFile f;
-  if (!Storage.openFileForRead("AO3L", path, f)) return false;
-  // tags[4][16] sits at byte 656 of Ao3LibraryMetadata. See sanitizeIndex.
-  if (!f.seek(656)) {
-    f.close();
-    return false;
-  }
-  char tag[17];
-  bool matched = false;
-  for (int i = 0; i < 4 && !matched; i++) {
-    memset(tag, 0, sizeof(tag));
-    f.read(reinterpret_cast<uint8_t*>(tag), 16);
-    tag[16] = '\0';
-    if (tag[0] && containsFold(tag, query)) matched = true;
-  }
-  f.close();
-  return matched;
-}
-
 void Ao3LibraryActivity::rebuildViewEntries() {
   viewEntries.clear();
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+
+  SearchToken tokens[8];
+  const int tokenCount = parseSearchTokens(activeState.textQuery, tokens, 8);
+  const bool hasInclude = hasSearchToken(tokens, tokenCount, false);
+  const bool hasExclude = hasSearchToken(tokens, tokenCount, true);
+  const bool wantText = hasInclude || hasExclude;
+
+  struct TagFlag {
+    uint32_t hash;
+    bool positive;
+    bool excluded;
+  };
+  struct TagScan {
+    const SearchToken* tokens;
+    int count;
+    std::vector<TagFlag>* rows;
+  };
+  std::vector<TagFlag> tagRows;
+  if (wantText) {
+    if (!Storage.exists(Ao3Librarian::kTagSearchPath)) Ao3Librarian::rebuildTagSearch();
+    TagScan scan{tokens, tokenCount, &tagRows};
+    Ao3Librarian::scanTagSearch(
+        [](uint32_t hash, const char tags[4][16], void* raw) {
+          auto* ctx = static_cast<TagScan*>(raw);
+          const bool positive = tagsContainQuery(tags, ctx->tokens, ctx->count, false);
+          const bool excluded = tagsContainQuery(tags, ctx->tokens, ctx->count, true);
+          for (TagFlag& row : *ctx->rows) {
+            if (row.hash == hash) {
+              row.positive = positive;
+              row.excluded = excluded;
+              return;
+            }
+          }
+          if (positive || excluded) ctx->rows->push_back(TagFlag{hash, positive, excluded});
+        },
+        &scan);
+  }
+  std::vector<uint32_t> tagPositive;
+  std::vector<uint32_t> tagExcluded;
+  tagPositive.reserve(tagRows.size());
+  tagExcluded.reserve(tagRows.size());
+  for (const TagFlag& row : tagRows) {
+    if (row.positive) tagPositive.push_back(row.hash);
+    if (row.excluded) tagExcluded.push_back(row.hash);
+  }
+  std::sort(tagPositive.begin(), tagPositive.end());
+  std::sort(tagExcluded.begin(), tagExcluded.end());
 
   if (!Storage.exists(indexPath)) {
     indexState = IndexState::MISSING;
@@ -2110,19 +2219,22 @@ void Ao3LibraryActivity::rebuildViewEntries() {
     if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
     if (rec.flags & 0x01) continue;           // Skip tombstone
     if (hideFinished && (rec.flags & 0x02)) continue; // Skip finished
-    if (activeState.textQuery[0] != '\0' && !compactTextMatch(rec, activeState.textQuery) &&
-        !sidecarTagsMatch(rec.cacheHash, activeState.textQuery)) {
+    ViewEntry v = buildViewEntry(rec);
+    if (!passesFilter(v, filterHashes)) {
       yield();
       continue;
     }
-    ViewEntry v = buildViewEntry(rec);
-    if (activeState.statusMask != 0) {
-      const auto st = static_cast<uint8_t>(getBookStatus(rec.cacheHash));
-      v.filterBits = static_cast<uint8_t>((v.filterBits & ~kFilterStatusMask) | (st & kFilterStatusMask));
+    if (wantText) {
+      const bool positive = !hasInclude || compactTextMatch(rec, tokens, tokenCount, false) ||
+                            std::binary_search(tagPositive.begin(), tagPositive.end(), rec.cacheHash);
+      const bool excluded = (hasExclude && compactTextMatch(rec, tokens, tokenCount, true)) ||
+                            std::binary_search(tagExcluded.begin(), tagExcluded.end(), rec.cacheHash);
+      if (!positive || excluded) {
+        yield();
+        continue;
+      }
     }
-    if (passesFilter(v, filterHashes)) {
-      viewEntries.push_back(v);
-    }
+    viewEntries.push_back(v);
     yield();
   }
   f.close();

@@ -1554,6 +1554,7 @@ void EpubReaderActivity::clearDeferredReposition() {
 }
 
 bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageCount) {
+  const BookStatus statusOnEntry = currentStatus;
   if (spineIndex != lastSavedSpineIndex || currentPage != lastSavedPage) {
     statusManuallySet = false;
   }
@@ -1619,7 +1620,11 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
   }
 
   // Call the new 1.6.0 utility directly with your AO3 status
-  return EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount, offset, currentStatus);
+  const bool saved = EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount, offset, currentStatus);
+  if (saved && currentStatus != statusOnEntry && epub->hasAo3Info()) {
+    Ao3Librarian::setRecordStatus(bookPath, static_cast<uint8_t>(currentStatus));
+  }
+  return saved;
 }
 
 void EpubReaderActivity::persistManualStatus() {
@@ -1628,7 +1633,9 @@ void EpubReaderActivity::persistManualStatus() {
   // position matches lastSaved*, so saveProgress skips the natural-status block and just
   // writes currentStatus to byte 10.
   RenderLock lock(*this);
-  saveProgress(currentSpineIndex, section->currentPage, section->estimatedTotalPages());
+  if (saveProgress(currentSpineIndex, section->currentPage, section->estimatedTotalPages()) && epub->hasAo3Info()) {
+    Ao3Librarian::setRecordStatus(bookPath, static_cast<uint8_t>(currentStatus));
+  }
 }
 
 void EpubReaderActivity::rememberCurrentContentOffset() {

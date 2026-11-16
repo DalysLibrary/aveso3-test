@@ -13,6 +13,7 @@
 
 #include "Epub/Section.h"
 #include "EpubReaderUtils.h"
+#include "Ao3Librarian.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderDocumentId.h"
 #include "MappedInputManager.h"
@@ -94,6 +95,9 @@ void KOReaderSyncActivity::saveProgressAndReturn(int spineIndex, int page) {
     }
     requestUpdate(true);
     return;
+  }
+  if (epub->hasAo3Info()) {
+    Ao3Librarian::setRecordStatus(epub->getPath(), static_cast<uint8_t>(BookStatus::READING));
   }
   returnToReader();
 }

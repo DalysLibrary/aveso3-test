@@ -64,7 +64,7 @@ inline ViewEntry buildViewEntry(const CompactIndexRecord& rec) {
     v.rel1Hash      = fnv1a(rec.relationship1);
     v.rel2Hash      = fnv1a(rec.relationship2);
     v.cacheHash     = rec.cacheHash;
-    v.filterBits    = 0;
+    v.filterBits    = statusFromIndexFlags(rec.flags) & kFilterStatusMask;
     if (rec.flags & kIndexFavourite) v.filterBits |= kFilterFavourite;
     if (rec.flags & kIndexMetaCompleted) v.filterBits |= kFilterMetaCompleted;
     return v;

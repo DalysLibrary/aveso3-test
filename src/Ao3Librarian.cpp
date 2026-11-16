@@ -1,5 +1,6 @@
 #include "Ao3Librarian.h"
 #include "Ao3LibraryQuery.h"
+#include "BookStatus.h"
 #include "activities/Ao3ArchiveHelper.h"
 #include <memory>
 #include <Epub.h>
@@ -8,6 +9,8 @@
 #include <functional>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace {
@@ -800,6 +803,7 @@ bool Ao3Librarian::scrape(const Epub& epub, bool force) {
     if (!writeIndexRecord(rec)) {
         return false;
     }
+    appendTagSearch(rec.cacheHash, meta->tags);
 
     return true;
   }
@@ -1048,7 +1052,7 @@ bool Ao3Librarian::writeIndexRecord(const CompactIndexRecord& rec) {
 
     if (updateSlot >= 0) {
         recToWrite.addedSequence = preservedSeq;
-        recToWrite.flags |= preservedFlags & (kIndexFavourite | kIndexFinished);
+        recToWrite.flags |= preservedFlags & (kIndexFavourite | kIndexFinished | kIndexStatusMask);
         f.seek(offsetOf(updateSlot));
         f.write((uint8_t*)&recToWrite, sizeof(recToWrite));
         f.close();
@@ -1202,6 +1206,49 @@ bool Ao3Librarian::setRecordFlag(const std::string& epubPath, uint8_t bit, bool 
     return false;
 }
 
+bool Ao3Librarian::setRecordStatus(const std::string& epubPath, uint8_t status) {
+    if (status > 5) status = 0;
+    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+    if (!Storage.exists(indexPath)) return false;
+
+    HalFile f = Storage.open(indexPath, O_RDWR);
+    if (!f) return false;
+
+    char     magic[4];
+    uint8_t  version;
+    uint16_t recordCount;
+    bool readOk = f.read(magic, 4) == 4 &&
+                  f.read(&version, 1) == 1 &&
+                  f.read((uint8_t*)&recordCount, 2) == 2;
+
+    if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1) {
+        f.close();
+        return false;
+    }
+
+    uint32_t targetHash = static_cast<uint32_t>(std::hash<std::string>{}(epubPath));
+
+    CompactIndexRecord rec;
+    for (uint16_t i = 0; i < recordCount; i++) {
+        f.seek(offsetOf(i));
+        if (f.read((uint8_t*)&rec, sizeof(rec)) != sizeof(rec)) break;
+
+        if (!(rec.flags & kIndexTombstone) && rec.cacheHash == targetHash) {
+            const uint8_t next = indexFlagsWithStatus(rec.flags, status);
+            if (next != rec.flags) {
+                rec.flags = next;
+                f.seek(offsetOf(i));
+                f.write((uint8_t*)&rec, sizeof(rec));
+            }
+            f.close();
+            return true;
+        }
+    }
+
+    f.close();
+    return false;
+}
+
 int Ao3Librarian::getRecordFlags(const std::string& epubPath) {
     const char* indexPath = "/.crosspoint/ao3_library_index.bin";
     if (!Storage.exists(indexPath)) return -1;
@@ -1277,10 +1324,12 @@ int Ao3Librarian::sanitizeIndex() {
         sidecarPath += "/ao3_library_info";
 
         bool valid = false;
+        uint8_t completed = 0;
         if (Storage.exists(sidecarPath.c_str())) {
-            // Read only the filepath field — avoids a full 1232-byte struct on the stack.
+            // Read only the bytes we need — avoids a full 1232-byte struct on the stack.
             HalFile sf;
             if (Storage.openFileForRead("AO3L", sidecarPath, sf)) {
+                if (sf.seek(7)) sf.read(&completed, 1);
                 if (sf.seek(kFilepathOffset)) {
                     char filepath[kFilepathLen];
                     memset(filepath, 0, sizeof(filepath));
@@ -1299,6 +1348,28 @@ int Ao3Librarian::sanitizeIndex() {
             f.write((uint8_t*)&rec, sizeof(rec));
             tombstoned++;
             LOG_DBG("AO3L", "sanitizeIndex: tombstoned ghost record (hash %u)", rec.cacheHash);
+        } else {
+            uint8_t status = 0;
+            std::string progressPath = "/.crosspoint/epub_";
+            progressPath += std::to_string(rec.cacheHash);
+            progressPath += "/progress.bin";
+            HalFile pf;
+            if (Storage.openFileForRead("AO3L", progressPath, pf)) {
+                uint8_t data[11] = {};
+                const int n = pf.read(data, sizeof(data));
+                pf.close();
+                if (n == 7) status = data[6];
+                else if (n >= 11) status = data[10];
+                if (status > static_cast<uint8_t>(BookStatus::MARKED_FOR_LATER)) status = 0;
+            }
+            uint8_t flags = indexFlagsWithStatus(rec.flags, status);
+            if (completed) flags |= kIndexMetaCompleted;
+            else flags &= static_cast<uint8_t>(~kIndexMetaCompleted);
+            if (flags != rec.flags) {
+                rec.flags = flags;
+                f.seek(offsetOf(i));
+                f.write((uint8_t*)&rec, sizeof(rec));
+            }
         }
 
         yield();
@@ -1308,5 +1379,136 @@ int Ao3Librarian::sanitizeIndex() {
     if (tombstoned > 0) {
         LOG_INF("AO3L", "sanitizeIndex: removed %d ghost record(s)", tombstoned);
     }
+    rebuildTagSearch();
     return tombstoned;
+}
+
+namespace {
+
+constexpr size_t kTagFieldOffset = 656;
+
+void writeTagLine(HalFile& out, uint32_t hash, const char tags[4][16]) {
+    char line[96];
+    int n = snprintf(line, sizeof(line), "%u", static_cast<unsigned>(hash));
+    if (n < 0) return;
+    for (int t = 0; t < 4 && n < static_cast<int>(sizeof(line)) - 2; t++) {
+        line[n++] = '\t';
+        for (int c = 0; c < 15 && tags[t][c] != '\0' && n < static_cast<int>(sizeof(line)) - 2; c++) {
+            char ch = tags[t][c];
+            if (ch == '\t' || ch == '\n' || ch == '\r') ch = ' ';
+            line[n++] = ch;
+        }
+    }
+    line[n++] = '\n';
+    out.write(reinterpret_cast<uint8_t*>(line), n);
+}
+
+bool readTags(uint32_t hash, char tags[4][16]) {
+    memset(tags, 0, 64);
+    std::string path = "/.crosspoint/epub_";
+    path += std::to_string(hash);
+    path += "/ao3_library_info";
+    HalFile sf;
+    if (!Storage.openFileForRead("AO3L", path, sf)) return false;
+    const bool ok = sf.seek(kTagFieldOffset) && sf.read(reinterpret_cast<uint8_t*>(tags), 64) > 0;
+    sf.close();
+    return ok;
+}
+
+}  // namespace
+
+const char* Ao3Librarian::kTagSearchPath = "/.crosspoint/ao3_tag_search.txt";
+
+void Ao3Librarian::appendTagSearch(uint32_t hash, const char tags[4][16]) {
+    if (!Storage.exists(kTagSearchPath)) return;
+    HalFile out = Storage.open(kTagSearchPath, O_RDWR);
+    if (!out) return;
+    out.seek(out.size());
+    writeTagLine(out, hash, tags);
+    out.close();
+}
+
+bool Ao3Librarian::rebuildTagSearch() {
+    const char* indexPath = "/.crosspoint/ao3_library_index.bin";
+    std::vector<uint32_t> hashes;
+    if (Storage.exists(indexPath)) {
+        HalFile in;
+        if (!Storage.openFileForRead("AO3L", indexPath, in)) return false;
+        char magic[4];
+        uint8_t version;
+        uint16_t recordCount;
+        const bool readOk = in.read(magic, 4) == 4 && in.read(&version, 1) == 1 &&
+                            in.read(reinterpret_cast<uint8_t*>(&recordCount), 2) == 2;
+        if (!readOk || memcmp(magic, "AO3X", 4) != 0 || version != 1 || recordCount > MAX_LIBRARY_BOOKS) {
+            in.close();
+            return false;
+        }
+        in.seek(INDEX_HEADER_SIZE);
+        hashes.reserve(recordCount);
+        CompactIndexRecord rec;
+        for (uint16_t i = 0; i < recordCount; i++) {
+            if (in.read(reinterpret_cast<uint8_t*>(&rec), sizeof(rec)) != sizeof(rec)) break;
+            if (rec.flags & 0x01) continue;
+            hashes.push_back(rec.cacheHash);
+        }
+        in.close();
+    }
+
+    HalFile out;
+    if (!Storage.openFileForWrite("AO3L", kTagSearchPath, out)) return false;
+    const char header[] = "# ao3-tags 1\n";
+    out.write(reinterpret_cast<const uint8_t*>(header), sizeof(header) - 1);
+    char tags[4][16];
+    for (uint32_t hash : hashes) {
+        if (readTags(hash, tags)) writeTagLine(out, hash, tags);
+        yield();
+    }
+    out.close();
+    return true;
+}
+
+void Ao3Librarian::scanTagSearch(TagSearchFn fn, void* ctx) {
+    if (!fn || !Storage.exists(kTagSearchPath)) return;
+    HalFile in;
+    if (!Storage.openFileForRead("AO3L", kTagSearchPath, in)) return;
+    char chunk[128];
+    char line[96];
+    int len = 0;
+    bool skip = false;
+    auto flush = [&]() {
+        if (!skip && len > 0 && line[0] != '#') {
+            line[len] = '\0';
+            char* end = nullptr;
+            unsigned long hash = strtoul(line, &end, 10);
+            if (end && *end == '\t') {
+                char tags[4][16];
+                memset(tags, 0, sizeof(tags));
+                const char* p = end + 1;
+                for (int t = 0; t < 4 && *p; t++) {
+                    int c = 0;
+                    while (*p && *p != '\t' && c < 15) tags[t][c++] = *p++;
+                    tags[t][c] = '\0';
+                    if (*p == '\t') p++;
+                }
+                fn(static_cast<uint32_t>(hash), tags, ctx);
+            }
+        }
+        len = 0;
+        skip = false;
+    };
+    int n = 0;
+    while ((n = in.read(reinterpret_cast<uint8_t*>(chunk), sizeof(chunk))) > 0) {
+        for (int i = 0; i < n; i++) {
+            const char ch = chunk[i];
+            if (ch == '\n') {
+                flush();
+            } else if (ch != '\r') {
+                if (len < static_cast<int>(sizeof(line)) - 1) line[len++] = ch;
+                else skip = true;
+            }
+        }
+        yield();
+    }
+    flush();
+    in.close();
 }

@@ -13,6 +13,8 @@
 #include "Ao3LibraryMetadata.h"
 #include "Ao3MarkedForLaterStore.h"
 #include "BookStatus.h"
+#include "Ao3Librarian.h"
+#include "Ao3LibraryQuery.h"
 #include "SilentRestart.h"
 
 #include "activities/network/WifiSelectionActivity.h"
@@ -430,8 +432,10 @@ void AO3SyncActivity::performDownload() {
                             f.write(data, bytesRead);
                             f.close();
                         }
+                        Ao3Librarian::setRecordStatus(bookPath, static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE));
                     }
                 }
+                Ao3Librarian::setRecordFlag(bookPath, kIndexMetaCompleted, scrapedIsCompleted);
 
                 MARKED_FOR_LATER_STORE.loadFromFile();
                 MARKED_FOR_LATER_STORE.removeByPath(bookPath);

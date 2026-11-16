@@ -1,0 +1,81 @@
+AO3 Library filters
+====================
+
+Open Sort & Filter from the library. Nothing changes the book list until you press Apply. Apply uses every filter that is still set and returns to the library.
+
+Clear under a filter clears only that filter. Clear all clears every filter, including the text search. A filter left empty is not applied.
+
+Fandom
+------
+Limits the list to one fandom. Relationship stays unavailable until a fandom is chosen.
+
+Relationship
+------------
+Limits the list to one relationship inside the chosen fandom. None keeps books in that fandom that have no relationship stored.
+
+Title starts and Author starts
+-------------------------------
+Opens a keyboard. Tap a letter or digit to include books whose title or author starts with it. Tap again to turn that key off. No keys selected means this filter is off.
+
+The & key matches a first character that is not a letter or a digit, such as a quote, dash, or bracket. Accented letters count as their base letter, so É counts as E.
+
+Status
+------
+Each row is a tick. No ticks means this filter is off. Marked for Later counts as Unread.
+
+Reading status, one of:
+  Unread
+  Reading
+  Finished Reading
+  Waiting for Chapter
+  New Chapter Available
+
+Publication, from the book's own record:
+  WIP                 not marked complete, including a chapter total shown as ?
+  Completed in AO3    marked complete
+
+Favorite is separate. A book can be Reading, or any other reading status, and also be a favorite. The heart in the book menu turns it on and off. That menu opens with a long press on the book. On a button-only device, Select does the same.
+
+Combine, at the top of the status list:
+  All    every ticked group must fit. A ticked reading status, a ticked publication row, and Favorite all have to match.
+  Any    one ticked group is enough.
+
+Within the reading statuses, any ticked status matches. Ticking both Reading and Waiting for Chapter shows books in either of those statuses.
+
+Text or tag
+-----------
+Searches the title, author, series, fandom, relationships, and the book's tags. The match is not case sensitive.
+
+A space means either word:
+  river castle
+shows a book that contains river, a book that contains castle, and a book that contains both.
+
+Quotes keep the words together:
+  "red castle"
+matches red castle in that order, including a longer tag such as red castle road. It does not match a book that has only red or only castle.
+
+A minus sign at the start of a word or a phrase excludes it:
+  river -castle
+shows books that contain river and hides books that contain castle.
+
+  -castle
+shows every book except those that contain castle.
+
+  river -"red castle"
+shows books that contain river, except books that contain the phrase red castle.
+
+A hyphen inside a word is not an exclusion. well-known is one word.
+
+Only the first four tags stored for a book are searched, and each is shortened to 15 characters. A longer tag can still match when the words you typed are inside that stored beginning.
+
+The tags are kept in one file on the card, /.crosspoint/ao3_tag_search.txt. Library Cleanup rewrites it. Indexing a book adds that book to the file after the file exists. The first text search builds the file if it is missing, and that one pass can take a few minutes. Later searches read the file once and should return without that wait.
+
+Sort by and Order
+-----------------
+Sort by Title, Author, Word Count, Date Added, or Series. Order is Ascending or Descending. These do not hide books.
+
+What the book row shows
+-----------------------
+The chapter line is the chapters already on the device and the planned total, for example Chapters: 12/40. An unknown total is shown as ?.
+
+Hide Finished, in the library settings, is separate from the Finished Reading tick. It removes finished books from the list before the filters above run.

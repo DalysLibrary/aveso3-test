@@ -24,8 +24,8 @@
 #include "fontIds.h"
 
 namespace {
-void drawHeartGlyph(GfxRenderer& renderer, int x, int y, bool filled) {
-  // 9x8 heart. Outline when off, solid when on. E-ink has no gray.
+void drawHeartGlyph(GfxRenderer& renderer, int x, int y, bool filled, int scale) {
+  // 9x8 heart, scaled. Outline when off, solid when on. E-ink has no gray.
   static const uint16_t solid[8] = {0b011001100, 0b111111110, 0b111111110, 0b111111110,
                                      0b011111100, 0b001111000, 0b000110000, 0b000010000};
   static const uint16_t outline[8] = {0b011001100, 0b100110010, 0b100000010, 0b100000010,
@@ -33,7 +33,8 @@ void drawHeartGlyph(GfxRenderer& renderer, int x, int y, bool filled) {
   const uint16_t* rows = filled ? solid : outline;
   for (int py = 0; py < 8; py++) {
     for (int px = 0; px < 9; px++) {
-      if (rows[py] & (1u << (8 - px))) renderer.drawPixel(x + px, y + py, true);
+      if (rows[py] & (1u << (8 - px)))
+        renderer.fillRect(x + px * scale, y + py * scale, scale, scale, true);
     }
   }
 }
@@ -250,9 +251,16 @@ void BookActionActivity::buildScreen(UiScreen& uiScreen) {
     if (logicalRow(i) == 0) statusVisual = i;
   }
   if (favVisual >= nav.top) {
-    const int hy = body.y + (favVisual - nav.top) * rowH + (rowH - 8) / 2;
-    if (hy >= body.y && hy + 8 <= body.y + body.height) {
-      drawHeartGlyph(renderer, body.x + body.width - 28, hy, isFavourite);
+    int scale = 3;
+    if (rowH < 8 * scale + 8) scale = 2;
+    const int heartW = 9 * scale;
+    const int heartH = 8 * scale;
+    const int rowTop = body.y + (favVisual - nav.top) * rowH;
+    const int inset = (rowH - heartH) / 2;
+    const int hy = rowTop + inset;
+    const int hx = body.x + body.width - inset - heartW;
+    if (inset > 0 && hy >= body.y && hy + heartH <= body.y + body.height) {
+      drawHeartGlyph(renderer, hx, hy, isFavourite, scale);
     }
   }
 
@@ -554,6 +562,7 @@ void BookActionActivity::saveStatus() {
     bool wasFinished   = (initialStatus  == BookStatus::FINISHED);
     if (isNowFinished != wasFinished)
       Ao3Librarian::setRecordFinished(filePath, isNowFinished);
+    Ao3Librarian::setRecordStatus(filePath, static_cast<uint8_t>(currentStatus));
   }
 
   if (currentStatus == BookStatus::MARKED_FOR_LATER) {

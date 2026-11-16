@@ -61,12 +61,21 @@ class Ao3Librarian {
    */
   static bool writeIndexRecord(const CompactIndexRecord& rec);
 
+  // One line per book in /.crosspoint/ao3_tag_search.txt. Search reads this
+  // file once. Indexing appends a line; Library Cleanup rewrites the file.
+  static const char* kTagSearchPath;
+  static void appendTagSearch(uint32_t hash, const char tags[4][16]);
+  static bool rebuildTagSearch();
+  using TagSearchFn = void (*)(uint32_t hash, const char tags[4][16], void* ctx);
+  static void scanTagSearch(TagSearchFn fn, void* ctx);
+
   /**
    * @brief Marks a record as tombstoned (deleted) in the index.
    */
   static bool tombstoneRecord(const std::string& epubPath);
   static bool setRecordFinished(const std::string& epubPath, bool finished);
   static bool setRecordFlag(const std::string& epubPath, uint8_t bit, bool on);
+  static bool setRecordStatus(const std::string& epubPath, uint8_t status);
   static int getRecordFlags(const std::string& epubPath);
 
   /**

@@ -16,6 +16,7 @@
 
 #include "Ao3LibraryMetadata.h"
 #include "BookStatus.h"
+#include "Ao3Librarian.h"
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
@@ -221,6 +222,7 @@ void Ao3ReceiveActivity::handleUpdateComplete(const std::string& receivedPath) {
             f.write(data, bytesRead);
             f.close();
         }
+        Ao3Librarian::setRecordStatus(targetPath, static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE));
     }
 
     // --- Store updates ---
