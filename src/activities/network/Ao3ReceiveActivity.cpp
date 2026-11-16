@@ -17,6 +17,7 @@
 #include "Ao3LibraryMetadata.h"
 #include "BookStatus.h"
 #include "Ao3Librarian.h"
+#include "activities/reader/ProgressFile.h"
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
@@ -204,7 +205,7 @@ void Ao3ReceiveActivity::handleUpdateComplete(const std::string& receivedPath) {
     {
         const std::string progressPath = cachePath + "/progress.bin";
         HalFile f;
-        uint8_t data[11] = {};
+        uint8_t data[12] = {};
         int bytesRead = 0;
         if (Storage.openFileForRead("AO3R", progressPath.c_str(), f)) {
             bytesRead = f.read(data, sizeof(data));
@@ -218,10 +219,7 @@ void Ao3ReceiveActivity::handleUpdateComplete(const std::string& receivedPath) {
         } else {
             data[10] = static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE);
         }
-        if (Storage.openFileForWrite("AO3R", progressPath.c_str(), f)) {
-            f.write(data, bytesRead);
-            f.close();
-        }
+        ProgressFile::writePreservingFavourite(cachePath, data, bytesRead >= 11 ? 11 : 7);
         Ao3Librarian::setRecordStatus(targetPath, static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE));
     }
 

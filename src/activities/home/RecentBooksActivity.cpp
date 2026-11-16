@@ -14,6 +14,7 @@
 #include "../../Ao3LibraryMetadata.h"
 #include "BookActionActivity.h"
 #include "../../Ao3Librarian.h"
+#include "../reader/ProgressFile.h"
 
 #include "CrossPointState.h"
 // Silent restart to Dashboard or AO3 Library, depending on the hint set by the activity that called silentRestartToHint()
@@ -469,10 +470,7 @@ void RecentBooksActivity::revertMarkedForLaterStatus(const std::string& path) {
     f.read(data, 10);
     f.close();
   }
-  if (Storage.openFileForWrite("RBA", progressPath, f)) {
-    f.write(data, 11);
-    f.close();
-  }
+  ProgressFile::writePreservingFavourite(cachePath, data, 11);
   Ao3Librarian::setRecordStatus(path, static_cast<uint8_t>(BookStatus::START));
 }
 

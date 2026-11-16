@@ -61,12 +61,12 @@ class Ao3Librarian {
    */
   static bool writeIndexRecord(const CompactIndexRecord& rec);
 
-  // One line per book in /.crosspoint/ao3_tag_search.txt. Search reads this
-  // file once. Indexing appends a line; Library Cleanup rewrites the file.
+  // /.crosspoint/ao3_tag_text.tsv — the same file the computer indexer writes.
+  // One line: 8 hex digits, the book path, then the tag text.
   static const char* kTagSearchPath;
   static void appendTagSearch(uint32_t hash, const char tags[4][16]);
   static bool rebuildTagSearch();
-  using TagSearchFn = void (*)(uint32_t hash, const char tags[4][16], void* ctx);
+  using TagSearchFn = void (*)(uint32_t hash, const char* text, size_t textLen, void* ctx);
   static void scanTagSearch(TagSearchFn fn, void* ctx);
 
   /**
@@ -84,6 +84,9 @@ class Ao3Librarian {
    * @return Number of records tombstoned, or -1 on index open failure.
    */
   static int sanitizeIndex();
+
+  // Copies complete/WIP and the reading status into the index. Runs once.
+  static bool syncPublicationFlags();
 
  private:
   /**

@@ -2095,6 +2095,7 @@ bool Ao3LibraryActivity::passesFilter(const ViewEntry& v, const FilterHashes& h)
 
 void Ao3LibraryActivity::rebuildViewEntries() {
   viewEntries.clear();
+  Ao3Librarian::syncPublicationFlags();
   const char* indexPath = "/.crosspoint/ao3_library_index.bin";
 
   SearchToken tokens[8];
@@ -2118,10 +2119,10 @@ void Ao3LibraryActivity::rebuildViewEntries() {
     if (!Storage.exists(Ao3Librarian::kTagSearchPath)) Ao3Librarian::rebuildTagSearch();
     TagScan scan{tokens, tokenCount, &tagRows};
     Ao3Librarian::scanTagSearch(
-        [](uint32_t hash, const char tags[4][16], void* raw) {
+        [](uint32_t hash, const char* text, size_t textLen, void* raw) {
           auto* ctx = static_cast<TagScan*>(raw);
-          const bool positive = tagsContainQuery(tags, ctx->tokens, ctx->count, false);
-          const bool excluded = tagsContainQuery(tags, ctx->tokens, ctx->count, true);
+          const bool positive = anyTokenIn(text, textLen, ctx->tokens, ctx->count, false);
+          const bool excluded = anyTokenIn(text, textLen, ctx->tokens, ctx->count, true);
           for (TagFlag& row : *ctx->rows) {
             if (row.hash == hash) {
               row.positive = positive;

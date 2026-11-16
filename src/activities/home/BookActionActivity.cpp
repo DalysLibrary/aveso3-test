@@ -18,6 +18,7 @@
 #include "Ao3NewChaptersStore.h"
 #include "Ao3WipsStore.h"
 #include "Ao3MarkedForLaterStore.h"
+#include "../reader/ProgressFile.h"
 #include "Ao3LibraryMetadata.h"
 #include "../reader/Ao3EndOfBookSeriesActivity.h"
 
@@ -528,6 +529,8 @@ void BookActionActivity::activateIndex(int index) {
     case 8: {
       isFavourite = !isFavourite;
       Ao3Librarian::setRecordFlag(filePath, kIndexFavourite, isFavourite);
+      const std::string cachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(filePath));
+      ProgressFile::setFavourite(cachePath, isFavourite);
       requestUpdate(true);
       break;
     }
@@ -546,16 +549,14 @@ void BookActionActivity::saveStatus() {
   HalFile f;
 
   uint8_t data[11] = {0};
-  data[10] = static_cast<uint8_t>(currentStatus);  // byte 10 = status
-  if (Storage.openFileForRead("BROWSER", cachePath + "/progress.bin", f)) {
+  data[10] = static_cast<uint8_t>(currentStatus);
+  const std::string progressPath = cachePath + "/progress.bin";
+  if (Storage.openFileForRead("BROWSER", progressPath, f)) {
     f.read(data, 10);  // preserve bytes 0-9
     f.close();
   }
   data[10] = static_cast<uint8_t>(currentStatus);
-  if (Storage.openFileForWrite("BROWSER", cachePath + "/progress.bin", f)) {
-    f.write(data, 11);
-    f.close();
-  }
+  ProgressFile::writePreservingFavourite(cachePath, data, 11);
 
   if (hasAo3LibraryInfo) {
     bool isNowFinished = (currentStatus == BookStatus::FINISHED);

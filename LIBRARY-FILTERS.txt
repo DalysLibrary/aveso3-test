@@ -36,6 +36,10 @@ Publication, from the book's own record:
 
 Favorite is separate. A book can be Reading, or any other reading status, and also be a favorite. The heart in the book menu turns it on and off. That menu opens with a long press on the book. On a button-only device, Select does the same.
 
+The favorite mark is kept with the book, in its progress file, as well as in the library index. Run Library Cleanup once after installing this version, while the current library is still there. That copies existing hearts into the progress files. After that, deleting the library index does not remove them: the next index, or Library Cleanup, puts the hearts back.
+
+A heart is still lost if the book's own cache folder is removed, or if the book is moved to a different folder on the card before it is indexed again. Those two actions give the book a new identity, so the old progress file is no longer attached to it.
+
 Combine, at the top of the status list:
   All    every ticked group must fit. A ticked reading status, a ticked publication row, and Favorite all have to match.
   Any    one ticked group is enough.
@@ -68,7 +72,7 @@ A hyphen inside a word is not an exclusion. well-known is one word.
 
 Only the first four tags stored for a book are searched, and each is shortened to 15 characters. A longer tag can still match when the words you typed are inside that stored beginning.
 
-The tags are kept in one file on the card, /.crosspoint/ao3_tag_search.txt. Library Cleanup rewrites it. Indexing a book adds that book to the file after the file exists. The first text search builds the file if it is missing, and that one pass can take a few minutes. Later searches read the file once and should return without that wait.
+The tags are kept in one file on the card, .crosspoint/ao3_tag_text.tsv. The Windows and Mac indexer writes that file, including the additional tags from each book. Library Cleanup rewrites it and keeps those lines. Indexing a book on the reader adds a line after the file exists. The first text search builds the file from the short tags if it is missing, and that one pass can take a few minutes. Later searches read the file once and should return without that wait.
 
 Sort by and Order
 -----------------

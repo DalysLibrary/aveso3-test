@@ -15,6 +15,7 @@
 #include "BookStatus.h"
 #include "Ao3Librarian.h"
 #include "Ao3LibraryQuery.h"
+#include "activities/reader/ProgressFile.h"
 #include "SilentRestart.h"
 
 #include "activities/network/WifiSelectionActivity.h"
@@ -419,7 +420,7 @@ void AO3SyncActivity::performDownload() {
                 const std::string progressPath = cachePath + "/progress.bin";
                 HalFile f;
                 if (Storage.openFileForRead("AO3", progressPath, f)) {
-                    uint8_t data[11] = {};
+                    uint8_t data[12] = {};
                     int bytesRead = f.read(data, sizeof(data));
                     f.close();
                     if (bytesRead >= 7) {
@@ -428,10 +429,7 @@ void AO3SyncActivity::performDownload() {
                         } else if (bytesRead >= 11) {
                             data[10] = static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE);
                         }
-                        if (Storage.openFileForWrite("AO3", progressPath, f)) {
-                            f.write(data, bytesRead);
-                            f.close();
-                        }
+                        ProgressFile::writePreservingFavourite(cachePath, data, bytesRead >= 11 ? 11 : 7);
                         Ao3Librarian::setRecordStatus(bookPath, static_cast<uint8_t>(BookStatus::NEW_CHAPTER_AVAILABLE));
                     }
                 }

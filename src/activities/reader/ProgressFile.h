@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 namespace ProgressFile {
@@ -59,6 +60,54 @@ inline bool writeAtomic(const std::string& cachePath, const uint8_t* data, size_
     return false;
   }
   return true;
+}
+
+// Byte 11 of progress.bin. Bit 0 is the favourite mark. A file shorter than
+// 12 bytes has no stored mark; the index is still the source until one is written.
+constexpr uint8_t kProgressFavouriteBit = 0x01;
+
+inline int readBytes(const std::string& cachePath, uint8_t* data, size_t cap) {
+  HalFile f;
+  if (!Storage.openFileForRead("PRG", cachePath + "/progress.bin", f)) return 0;
+  const int n = f.read(data, cap);
+  f.close();
+  return n < 0 ? 0 : n;
+}
+
+inline bool readFavourite(const std::string& cachePath) {
+  uint8_t data[12] = {};
+  const int n = readBytes(cachePath, data, sizeof(data));
+  return n >= 12 && (data[11] & kProgressFavouriteBit) != 0;
+}
+
+// Writes the favourite mark without dropping the reading position or status.
+// A 7-byte progress file is stored in the 12-byte layout, with its status moved
+// from byte 6 to byte 10.
+inline bool setFavourite(const std::string& cachePath, bool on) {
+  uint8_t data[12] = {};
+  const int n = readBytes(cachePath, data, sizeof(data));
+  if (n == 7) {
+    const uint8_t status = data[6];
+    data[6] = data[7] = data[8] = data[9] = 0;
+    data[10] = status;
+  }
+  if (on) data[11] = static_cast<uint8_t>(data[11] | kProgressFavouriteBit);
+  else data[11] = static_cast<uint8_t>(data[11] & ~kProgressFavouriteBit);
+  return writeAtomic(cachePath, data, sizeof(data));
+}
+
+// Rewrites the first `len` bytes (7 or 11). Keeps byte 11 when the file already has one,
+// and does not add one when it does not. Adding a zero byte would look like "not a favourite".
+inline bool writePreservingFavourite(const std::string& cachePath, const uint8_t* fresh, size_t len) {
+  uint8_t old[12] = {};
+  const int n = readBytes(cachePath, old, sizeof(old));
+  if (n >= 12 && len >= 11 && len <= 11) {
+    uint8_t data[12];
+    memcpy(data, fresh, 11);
+    data[11] = old[11];
+    return writeAtomic(cachePath, data, sizeof(data));
+  }
+  return writeAtomic(cachePath, fresh, len);
 }
 
 }  // namespace ProgressFile
